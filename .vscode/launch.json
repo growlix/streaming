@@ -1,0 +1,46 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--streaming_remote",
+                "s3://mosaicml-internal-dataset-the-pile/mds/2/",
+                "--streaming_local",
+                "/tmp/pile",
+                "--save_dir",
+                "~/preprocessed",
+                "--split",
+                "val",
+                "--name",
+                "pile"
+            ]
+        },
+        {
+            "name": "wiki40b",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--data_dir",
+                "/root/preprocessed",
+                "--save_dir",
+                "/root/preprocessed",
+                "--split",
+                "test",
+                "--name",
+                "wiki40b"
+            ]
+        }
+    ]
+}
