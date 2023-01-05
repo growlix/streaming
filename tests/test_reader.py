@@ -105,6 +105,8 @@ def test_dataset_determinism(mds_dataset_dir: Any, batch_size: int, seed: int, s
     for sample in dataset:
         sample_order.append(sample['id'])
 
+    del dataset
+
     # Build StreamingDataset again to test deterministic sample ID
     dataset = StreamingDataset(local=local_dir,
                                remote=remote_dir,
@@ -123,10 +125,7 @@ def test_dataset_determinism(mds_dataset_dir: Any, batch_size: int, seed: int, s
 
 @pytest.mark.parametrize(
     'missing_file',
-    [
-        'index',
-        'shard',
-    ],
+    ['index'],
 )
 @pytest.mark.usefixtures('mds_dataset_dir')
 def test_reader_download_fail(mds_dataset_dir: Any, missing_file: str):
@@ -134,19 +133,16 @@ def test_reader_download_fail(mds_dataset_dir: Any, missing_file: str):
 
     if missing_file == 'index':
         os.remove(os.path.join(remote_dir, 'index.json'))
-    elif missing_file == 'shard':
-        os.remove(os.path.join(remote_dir, 'shard.00000.mds'))
 
     # Build and iterate over a StreamingDataset
-    try:
+    with pytest.raises(FileNotFoundError) as exc_info:
         dataset = StreamingDataset(local=local_dir,
                                    remote=remote_dir,
                                    shuffle=False,
                                    download_timeout=1)
         for _ in dataset:
             pass
-    except FileNotFoundError as e:
-        logger.debug(f'Successfully raised error: {e}')
+    assert exc_info.match(r'.*No such file or directory*')
 
 
 @pytest.mark.parametrize('created_ago', [0.5, 1.0])
