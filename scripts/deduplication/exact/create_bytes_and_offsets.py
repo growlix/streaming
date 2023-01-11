@@ -14,6 +14,7 @@
 import os
 import struct
 import numpy as np
+from tqdm import tqdm
 from transformers import GPT2Tokenizer, T5Tokenizer
 
 from streaming.base.dataset import StreamingDataset
@@ -79,10 +80,8 @@ if not os.path.exists(save_dir):
 
 fout = open(os.path.join(save_dir, dataset_name+"."+split), "wb")
 
-i = 0
 sizes = [0]
-for sample in dataset:
-    print(i)
+for sample in tqdm(dataset):
 
     text = bytes(sample['text'], 'utf-8')
     text = tok(text)
@@ -90,6 +89,5 @@ for sample in dataset:
     next_line = sep()+text
     fout.write(next_line)
     sizes.append(sizes[-1]+len(next_line))
-    i += 1
 
 open(os.path.join(save_dir,dataset_name+"."+split+".size"), "wb").write(np.array(sizes,dtype=np.uint64).tobytes())

@@ -41,6 +41,28 @@
                 "--name",
                 "wiki40b"
             ]
-        }
+        },
+        {
+            "name": "wiki40b_finish_dedup",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--data_dir",
+                "~/tensorflow_datasets/",
+                "--save_dir",
+                "/tmp/tfds_wiki40b",
+                "--name",
+                "wiki40b",
+                "--split",
+                "test",
+                "--suffixarray_dir",
+                "scripts/deduplication/exact/deduplicate-text-datasets/data",
+                "--remove",
+                "/tmp/wiki40b.test.remove.byterange"
+            ]
+        }        
     ]
 }
