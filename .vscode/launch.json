@@ -63,6 +63,28 @@
                 "--remove",
                 "/tmp/wiki40b.test.remove.byterange"
             ]
-        }        
+        },
+        {
+            "name": "pile_val_finish_dedup",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--data_dir",
+                "~/preprocessed",
+                "--save_dir",
+                "~/preprocessed",
+                "--name",
+                "pile",
+                "--split",
+                "val",
+                "--suffixarray_dir",
+                "~/preprocessed",
+                "--remove",
+                "~/preprocessed/pile.val.remove.byterange"
+            ]
+        },
     ]
 }
