@@ -72,10 +72,12 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
+                "--streaming_local",
+                "/tmp/pile",
                 "--data_dir",
                 "~/preprocessed",
                 "--save_dir",
-                "~/preprocessed",
+                "~/pile_dedupe",
                 "--name",
                 "pile",
                 "--split",
