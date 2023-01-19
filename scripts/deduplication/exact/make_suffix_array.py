@@ -28,7 +28,7 @@ started = []
 
 if data_size > 10e9:
     total_jobs = 100
-    jobs_at_once = 20
+    jobs_at_once = 10
 elif data_size > 1e9:
     total_jobs = 96
     jobs_at_once = 96
