@@ -126,7 +126,7 @@ class E5Collator:
         # instruction_length
         max_length = chunk_size - instruction_length
         # Tokenize
-        input_tokenized = self.tokenizer(text, truncation=True, max_length=max_length, return_tensors='pt', return_overflowing_tokens=True)
+        input_tokenized = self.tokenizer(text, truncation=True, max_length=max_length, return_tensors='pt', return_overflowing_tokens=True, padding=True)
         # Insert the instruction into the tokenized input at index = 1 (after the [CLS]
         # token and before the input text)
         if instruction is not None:
