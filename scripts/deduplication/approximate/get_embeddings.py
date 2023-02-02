@@ -104,56 +104,51 @@ class E5Collator:
         self.chunk_size = chunk_size
         self.instruction = instruction
 
-    def _chunk_text(self, text: str, chunk_size=None, instruction=None):
-        if chunk_size is None:
-            chunk_size = self.chunk_size
-        if instruction is None:
-            instruction = self.instruction
-        chunks = []
-        for start in range(0, len(text), chunk_size):
-            end = start + chunk_size
-            if len(text) < end:
-                curr_seq = text[start:]
-            else:
-                curr_seq = text[start:end]
-            if instruction is not None:
-                chunks.append(f"{instruction}{curr_seq}")
-            else:
-                chunks.append(curr_seq)
-        return chunks
-
-    def _chunk_tokens(self, text: str, chunk_size=None, instruction=None):
+    def _chunk_tokens(self, text: List[str], chunk_size=None, instruction=None):
+        # Make sure there's a tokenizer
         assert self.tokenizer
         if chunk_size is None:
             chunk_size = self.chunk_size
+            # If we never set a chunk size, default to using the tokenizer's maximum sequence length
+            if chunk_size is None:
+                chunk_size = self.tokenizer.model_max_length
         if instruction is None:
             instruction = self.instruction
+        # Tokenize instruction (if we have one)
         if instruction is not None:
             instruction_tokenized = self.tokenizer(instruction, truncation=False, max_length=False, return_tensors='pt')
+            # Strip the beginning ([CLS]) and final ([SEP]) tokens.
+            instruction_tokenized = {k: v[:,1:-1] for k, v in instruction_tokenized.items()}
             instruction_length = instruction_tokenized['input_ids'].shape[1]
         else:
             instruction_length = 0
-        input_tokenized = self.tokenizer(text, truncation=False, max_length=False, return_tensors='pt')
-        test = self.tokenizer(text, max_length=100, truncation=True, padding=True, return_tensors='pt', return_overflowing_tokens=True)
-        text_length = input_tokenized['input_ids'].shape[1]
-        chunk_size = self.tokenizer.model_max_length - instruction_length
-        n_chunks = math.ceil(text_length/chunk_size)
-        # pad_
-        for start in range(0, len(tokens), chunk_size):
-            end = start + chunk_size
-            if len(tokens) < end:
-                curr_seq = tokens[start:]
-            else:
-                curr_seq = tokens[start:end]
-            chunks.append(curr_seq)
-        return chunks
+        # Account for the size of the instruction when chunking - reduce chunk_size by
+        # instruction_length
+        max_length = chunk_size - instruction_length
+        # Tokenize
+        input_tokenized = self.tokenizer(text, truncation=True, max_length=max_length, return_tensors='pt', return_overflowing_tokens=True)
+        # Insert the instruction into the tokenized input at index = 1 (after the [CLS]
+        # token and before the input text)
+        if instruction is not None:
+            for k, instruction_value in instruction_tokenized.items():
+                input_value = input_tokenized[k]
+                input_tokenized[k] = torch.cat([
+                    input_value[:,0:1],
+                    instruction_value.repeat(input_value.shape[0], 1),
+                    input_value[:, 1:]
+                    ], 1)
+        return input_tokenized
 
     def __call__(self, samples):
-        if self.tokenizer is not None:
-            collated_samples = defaultdict(list)
-        else:
-            collated_samples = []
-        sample_indices = np.array([],dtype='uint32')
+        sample_indices = []
+        texts = []
+        for sample in samples:
+            texts.append(sample[0]['text'])
+            sample_indices.append(sample[1])
+        samples_tokenized = self._chunk_tokens(texts)
+
+        texts = [i[0]['text'] for i in samples]
+        sample_indices = [i]
         for sample in samples:
             index = sample[1]
             text = sample[0]['text']
