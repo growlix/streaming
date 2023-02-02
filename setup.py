@@ -1,4 +1,4 @@
-# Copyright 2022 MosaicML Streaming authors
+# Copyright 2023 MosaicML Streaming authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Streaming package setup."""
@@ -44,9 +44,8 @@ classifiers = [
 install_requires = [
     'boto3>=1.21.45,<2',
     'Brotli>=1.0.9',
-    'datasets>=2.4.0,<3',
     'matplotlib>=3.5.2,<4',
-    'paramiko>=2.11.0,<3',
+    'paramiko>=2.11.0,<4',
     'python-snappy>=0.6.1,<1',
     'torch>=1.10,<2',
     'torchtext>=0.10',
@@ -61,15 +60,19 @@ install_requires = [
 extra_deps = {}
 
 extra_deps['dev'] = [
+    'datasets>=2.4.0,<3',
     'docformatter>=1.4',
     'jupyter==1.0.0',
-    'pre-commit>=2.18.1,<3',
-    'pytest==7.2.0',
+    'pre-commit>=2.18.1,<4',
+    'pytest==7.2.1',
     'pytest_codeblocks==0.16.1',
     'pytest-cov>=4,<5',
     'toml==0.10.2',
-    'yamllint==1.28.0',
+    'yamllint==1.29.0',
     'moto>=4.0,<5',
+    'fastapi==0.89.1',
+    'pydantic==1.10.4',
+    'uvicorn==0.20.0',
 ]
 
 extra_deps['docs'] = [
@@ -77,7 +80,7 @@ extra_deps['docs'] = [
     'docutils==0.17.1',
     'furo==2022.9.29',
     'myst-parser==0.18.1',
-    'nbsphinx==0.8.11',
+    'nbsphinx==0.8.12',
     'pandoc==2.3',
     'pypandoc==1.10',
     'sphinx-argparse==0.4.0',
@@ -85,9 +88,9 @@ extra_deps['docs'] = [
     'sphinx==4.4.0',
     'sphinx_panels==0.6.0',
     'sphinxcontrib-images==0.9.4',
-    'sphinxcontrib.katex==0.9.3',
+    'sphinxcontrib.katex==0.9.4',
     'sphinxemoji==0.2.0',
-    'sphinxext.opengraph==0.7.4',
+    'sphinxext.opengraph==0.7.5',
 ]
 
 extra_deps['all'] = set(dep for deps in extra_deps.values() for dep in deps)
