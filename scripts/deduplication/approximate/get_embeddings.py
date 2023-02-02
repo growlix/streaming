@@ -147,8 +147,8 @@ class E5Collator:
             sample_indices.append(sample[1])
         samples_tokenized = self._chunk_tokens(texts)
 
-        texts = [i[0]['text'] for i in samples]
-        sample_indices = [i]
+        # texts = [i[0]['text'] for i in samples]
+        # sample_indices = [i ]
         for sample in samples:
             index = sample[1]
             text = sample[0]['text']
