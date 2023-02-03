@@ -212,18 +212,18 @@ def do_the_thing(
         batch = batch_to_device(batch, model.device)
         if isinstance(batch, Mapping) and batch['input_ids'].shape[0] > batch_size_inference:
             microbatches = subdivide_batch(batch, batch_size_inference)
-            microbatch_out = []
+            microbatches_out = []
             with torch.no_grad():
                 for microbatch in microbatches:
-                    microbatch_out.append(model(**microbatch))
+                    microbatches_out.append(model(**microbatch))
             del microbatches
             # Aggregate microbatches
-            out = microbatch_out[0]
-            for i, microbatch_out in enumerate(microbatch_out[1:], 1):
+            out = microbatches_out[0]
+            for i, microbatch_out in enumerate(microbatches_out[1:], 1):
                 for k, v in microbatch_out.items():
                     out[k] = torch.cat([out[k], v], 0)
-                    microbatch_out[i] = []
-            del microbatch_out
+                microbatches_out[i] = []
+            del microbatches_out
         else:
             with torch.no_grad():
                 out = model(**batch)
