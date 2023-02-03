@@ -132,7 +132,6 @@ def avg_sequences(seq_embeddings: Tensor, sample_indices: Tensor):
     mean_embeddings.scatter_reduce_(dim=0, index=reduce_inds, src=seq_embeddings, reduce='mean', include_self=False)
     return mean_embeddings
 
-
 def post_process_bert(
     last_hidden_state: Tensor,
     attention_mask: Tensor,
@@ -145,6 +144,9 @@ def post_process_bert(
     doc_embeddings = torch.nn.functional.normalize(doc_embeddings, p=2, dim=1)
 
     return doc_embeddings
+
+def subdivide_batch(batch, batch_size):
+    
 
 def do_the_thing(
     rank: int,
@@ -187,9 +189,11 @@ def do_the_thing(
 
     model.eval()
 
+    dataset_len = torch.tensor(len(dataset), device=rank)
+    dist.reduce(dataset_len,dst=0)
     if rank == 0:
         # File that we write to that contains embeddings
-        emb_array = np.memmap('EMB_MEMORY.npy', dtype='float32', mode='w+', shape=(len(dataset), embedding_dim))
+        emb_array = np.memmap('EMB_MEMORY.npy', dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
 
     if rank == 0:
         pbar = tqdm(total=len(dataloader))
