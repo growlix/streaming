@@ -19,7 +19,7 @@
                 "--save_dir",
                 "~/preprocessed",
                 "--split",
-                "val",
+                "train",
                 "--name",
                 "pile"
             ]
