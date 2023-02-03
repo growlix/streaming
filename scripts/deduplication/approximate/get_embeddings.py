@@ -221,7 +221,13 @@ def do_the_thing(
             out = microbatches_out[0]
             for i, microbatch_out in enumerate(microbatches_out[1:], 1):
                 for k, v in microbatch_out.items():
-                    out[k] = torch.cat([out[k], v], 0)
+                    new_shape = v.shape
+                    existing_shape = out[k].shape
+                    try:
+                        out[k] = torch.cat([out[k], v], 0)
+                    except torch.cuda.OutOfMemoryError as e:
+                        print(f'Concating tensor of shapes {existing_shape} and {new_shape}\n')
+                        raise e
                 microbatches_out[i] = []
             del microbatches_out
         else:
