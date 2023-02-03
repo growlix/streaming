@@ -15,8 +15,6 @@ def setup(rank, world_size):
     os.environ['MASTER_PORT'] = '12355'
     os.environ['WORLD_SIZE'] = f'{world_size}'
     os.environ['RANK'] = f'{rank}'
-    # os.environ['LOCAL_WORLD_SIZE'] = f'{world_size}'
-    # os.environ['LOCAL_RANK'] = f'{rank}'
 
     # initialize the process group
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
@@ -145,8 +143,17 @@ def post_process_bert(
 
     return doc_embeddings
 
-def subdivide_batch(batch, batch_size):
-    
+def subdivide_batch(batch: Mapping, batch_size: int):
+    n_samples = batch['input_ids'].shape[0]
+    batches = []
+    for i in range(0, n_samples, batch_size):
+        if i + batch_size > n_samples:
+            inds = (i, n_samples)
+        else:
+            inds = (i, i + batch_size)
+        batches.append({k: v[inds[0]:inds[1], :] for k, v in batch.items()})
+    return batches
+
 
 def do_the_thing(
     rank: int,
@@ -158,7 +165,8 @@ def do_the_thing(
     file_name: str,
     model_name: str,
     embedding_dim: int,
-    batch_size: int,
+    batch_size_dataloader: int,
+    batch_size_inference: int,
     collator: Callable,
     post_processing: Callable,
     ):
@@ -174,7 +182,7 @@ def do_the_thing(
 
     dataloader = torch.utils.data.DataLoader(
         dataset,
-        batch_size=batch_size,
+        batch_size=batch_size_dataloader,
         shuffle=False,
         collate_fn=collator,
         num_workers=8
@@ -193,7 +201,7 @@ def do_the_thing(
     dist.reduce(dataset_len,dst=0)
     if rank == 0:
         # File that we write to that contains embeddings
-        emb_array = np.memmap('EMB_MEMORY.npy', dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
+        emb_array = np.memmap(file_name, dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
 
     if rank == 0:
         pbar = tqdm(total=len(dataloader))
@@ -202,10 +210,20 @@ def do_the_thing(
 
     for batch, sample_indices in dataloader:
         batch = batch_to_device(batch, model.device)
-        
-        with torch.no_grad():
-            out = model(**batch)
-            embeddings = post_processing(**out, **batch, sample_indices=sample_indices)
+        if isinstance(batch, Mapping) and batch['input_ids'].shape[0] > batch_size_inference:
+            microbatches = subdivide_batch(batch, batch_size_inference)
+            outputs = []
+            with torch.no_grad():
+                for microbatch in microbatches:
+                    outputs.append(model(**microbatch))
+            # Aggregate microbatches
+            out = outputs[0]
+            for microbatch_out in outputs[1:]:
+                out = {k: torch.cat([out[k], v], 0) for k, v in microbatch_out.items()}
+        else:
+            with torch.no_grad():
+                out = model(**batch)
+        embeddings = post_processing(**out, **batch, sample_indices=sample_indices)
         sample_indices_unique = sample_indices.unique()
 
         if rank > 0:
@@ -248,26 +266,22 @@ if __name__ == "__main__":
     parser.add_argument('--streaming_remote', type=str, default="s3://mosaicml-internal-dataset-the-pile/mds/2/")
     parser.add_argument('--streaming_local', type=str, default="/tmp/streaming_dataset")
     parser.add_argument('--save_dir', default="~/data_embeddings", type=str)
-    parser.add_argument('--name', default='pile', type=str)
+    parser.add_argument('--file_name', default='EMB_MEMORY.npy', type=str)
     parser.add_argument('--split', default='train', type=str)
     parser.add_argument('--instruction', default='query: ', type=str)
     parser.add_argument('--model_name', default='intfloat/e5-base', type=str)
     parser.add_argument('--tokenizer', default='intfloat/e5-base', type=str)
     parser.add_argument('--max_seq_length', default=512, type=int, help="Model's maximum accepted sequence length")
     parser.add_argument('--embedding_dim', default=768, type=int)
-    parser.add_argument('--batch_size', default=8, type=int)
+    parser.add_argument('--batch_size_dataloader', default=64, type=int)
+    parser.add_argument('--batch_size_inference', default=128, type=int)
     parser.add_argument('--world_size', default=torch.cuda.device_count(), type=int)
     parser.add_argument('--post_processing_fxn', default='post_processing_bert', type=str)
     parser.add_argument('--collator', default="e5", type=str)
     args = parser.parse_args()
 
-    # split = args.split
-    # save_dir = args.save_dir
-    # dataset_name = args.name
     if args.streaming_remote.lower() == "none":
         args.streaming_remote = None
-    # remote = args.streaming_remote
-    # local = args.streaming_local
 
     embedding_dim = args.embedding_dim
     instruction = args.instruction
@@ -286,7 +300,7 @@ if __name__ == "__main__":
     post_processing_fxn = POST_PROCESSING_FXNS[args.post_processing_fxn]
 
     world_size = args.world_size
-    world_size = 1
+    # world_size = 1
     mp.spawn(
         do_the_thing,
         args=[
@@ -295,10 +309,11 @@ if __name__ == "__main__":
             args.streaming_local,
             args.save_dir,
             args.split,
-            args.name,
+            args.file_name,
             args.model_name,
             args.embedding_dim,
-            args.batch_size,
+            args.batch_size_dataloader,
+            args.batch_size_inference,
             collator,
             post_processing_fxn,
         ],
