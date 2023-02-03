@@ -1,25 +1,14 @@
-import math
 import os
-from collections import defaultdict
-# from InstructorEmbedding import INSTRUCTOR
 from streaming.base.dataset import StreamingDataset
-# from sentence_transformers import SentenceTransformer
 import torch
-from torch import Tensor, device
+from torch import device, Tensor
 import torch.distributed as dist
-import torch.nn as nn
 import torch.multiprocessing as mp
 from tqdm import tqdm
-from tqdm.autonotebook import trange
 import argparse
 import numpy as np
-from typing import Any, Callable, Dict, List, Tuple, Union
-from torch.nn.parallel import DistributedDataParallel as DDP
-# from lorem.text import TextLorem
-# import logging
-# from torchvision.models import resnet50
+from typing import Any, Callable, Dict, List, Mapping, Tuple, Union
 from transformers import AutoTokenizer, AutoModel
-from functools import partial
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = '127.0.0.1'
@@ -50,25 +39,6 @@ class StreamingDatasetIndexed(StreamingDataset):
         return reader[index_in_shard], index
 
 
-# Synthetic data for testing
-class SyntheticDataset(torch.utils.data.Dataset):
-    def __init__(self, size=10000):
-        super(SyntheticDataset).__init__()
-        self.size = size
-        self.samples = []
-        lorem = TextLorem(trange=(3, 30))
-        # example = lorem.text()
-        for _ in range(0, self.size):
-            example = lorem.text()
-            self.samples.append({'text': example})
-
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, index: int):
-        return self.samples[index], index
-
-
 # Embedding model's max sequence length in 512, so we need a function that will divide
 # each document into chunks of length ≤512
 def chunk_text(text: str, chunk_size: int=512, instruction: str="Represent the document for clustering:"):
@@ -83,17 +53,11 @@ def chunk_text(text: str, chunk_size: int=512, instruction: str="Represent the d
     return chunks
 
 
-def chunk_tokens(tokens: List[int], chunk_size: int=512, instruction: str="Represent the document for clustering:"):
-    chunks = []
-    for start in range(0, len(tokens), chunk_size):
-        end = start + chunk_size
-        if len(tokens) < end:
-            curr_seq = tokens[start:]
-        else:
-            curr_seq = tokens[start:end]
-        chunks.append(curr_seq)
-    return chunks
-
+def batch_to_device(batch, target_device: device):
+    for key in batch:
+        if isinstance(batch[key], Tensor):
+            batch[key] = batch[key].to(target_device)
+    return batch
 
 # Custom collate function that will get our data into the appropriate input format for the
 # encoder
@@ -121,6 +85,7 @@ class E5Collator:
             instruction_tokenized = {k: v[:,1:-1] for k, v in instruction_tokenized.items()}
             instruction_length = instruction_tokenized['input_ids'].shape[1]
         else:
+            instruction_tokenized = None
             instruction_length = 0
         # Account for the size of the instruction when chunking - reduce chunk_size by
         # instruction_length
@@ -130,6 +95,7 @@ class E5Collator:
         # Insert the instruction into the tokenized input at index = 1 (after the [CLS]
         # token and before the input text)
         if instruction is not None:
+            assert type(instruction_tokenized) is dict
             for k, instruction_value in instruction_tokenized.items():
                 input_value = input_tokenized[k]
                 input_tokenized[k] = torch.cat([
@@ -139,45 +105,46 @@ class E5Collator:
                     ], 1)
         return input_tokenized
 
-    def __call__(self, samples):
+    def __call__(self, samples: List) -> Tuple[Dict[str, Tensor], Tensor]:
         sample_indices = []
         texts = []
         for sample in samples:
             texts.append(sample[0]['text'])
             sample_indices.append(sample[1])
         samples_tokenized = self._chunk_tokens(texts)
+        _, counts = samples_tokenized['overflow_to_sample_mapping'].unique(return_counts=True)
+        sample_indices = torch.tensor(sample_indices).repeat_interleave(repeats=counts)
+        samples_tokenized.pop('overflow_to_sample_mapping')
+        return samples_tokenized, sample_indices
 
-        # texts = [i[0]['text'] for i in samples]
-        # sample_indices = [i ]
-        for sample in samples:
-            index = sample[1]
-            text = sample[0]['text']
-            if self.tokenizer is not None:
-                chunks = self._chunk_tokens(text)
-                n_chunks = len(chunks['token_ids'])
-                for k, v in chunks.items():
-                    collated_samples[k].append(v)
-                # collated_samples.extend(chunks)
-            else:
-                chunks = self._chunk_text(text)
-                n_chunks = len(chunks)
-                collated_samples.extend(chunks)
-            sample_indices = np.append(sample_indices, np.repeat(index, n_chunks))
-        return collated_samples, sample_indices
+def avg_pool_tokens(last_hidden_states: Tensor,
+                 attention_mask: Tensor) -> Tensor:
+    last_hidden = last_hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
+    return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
 
-# Custom collate function that will chunk up our documents
-def collate_samples(samples):
-    collated_samples = []
-    sample_indices = np.array([],dtype='uint32')
-    for sample in samples:
-        index = sample[1]
-        text = sample[0]['text']
-        chunks = chunk_text(text)
-        n_chunks = len(chunks)
-        sample_indices = np.append(sample_indices, np.repeat(index, n_chunks))
-        collated_samples.extend(chunks)
-    return collated_samples, sample_indices
+def avg_sequences(seq_embeddings: Tensor, sample_indices: Tensor):
+    curr_device = seq_embeddings.device
+    sample_indices = sample_indices.to(curr_device)
+    uniques, inverse = sample_indices.unique(return_inverse=True)
+    reduce_inds = inverse.view(inverse.size(0), 1).expand(-1, seq_embeddings.size(1))
+    mean_embeddings = torch.zeros(uniques.size(0), seq_embeddings.size(1), device=curr_device)
+    # print(f"Device rank: {rank}. {reduce_inds} {embeddings}")
+    mean_embeddings.scatter_reduce_(dim=0, index=reduce_inds, src=seq_embeddings, reduce='mean', include_self=False)
+    return mean_embeddings
 
+
+def post_process_bert(
+    last_hidden_state: Tensor,
+    attention_mask: Tensor,
+    sample_indices: Tensor,
+    **kwargs
+    ):
+
+    seq_embeddings = avg_pool_tokens(last_hidden_state, attention_mask)
+    doc_embeddings = avg_sequences(seq_embeddings, sample_indices)
+    doc_embeddings = torch.nn.functional.normalize(doc_embeddings, p=2, dim=1)
+
+    return doc_embeddings
 
 def do_the_thing(
     rank: int,
@@ -191,6 +158,7 @@ def do_the_thing(
     embedding_dim: int,
     batch_size: int,
     collator: Callable,
+    post_processing: Callable,
     ):
 
     setup(rank, world_size)
@@ -211,21 +179,13 @@ def do_the_thing(
     )
 
     if rank == 0:
-        # model = SentenceTransformer('sentence-transformers/sentence-t5-large').to(rank)
-        # model = INSTRUCTOR('hkunlp/instructor-base').to(rank)
         model = AutoModel.from_pretrained(model_name).to(rank)
-        # model = resnet50().to(rank)
-        # print(f'rank: {rank}')
-        # print(model._target_device)
     dist.barrier()
     if rank > 0:
-        # model = SentenceTransformer('sentence-transformers/sentence-t5-large').to(rank)
-        # model = INSTRUCTOR('hkunlp/instructor-base').to(rank)
         model = AutoModel.from_pretrained(model_name).to(rank)
-        # model = resnet50().to(rank)
-        # print(f'rank: {rank}')
-        # print(model._target_device)
     dist.barrier()
+
+    model.eval()
 
     if rank == 0:
         # File that we write to that contains embeddings
@@ -233,43 +193,50 @@ def do_the_thing(
 
     if rank == 0:
         pbar = tqdm(total=len(dataloader))
+    else:
+        pbar = None
 
-    for samples, sample_indices in dataloader:
-        # print(f'rank: {rank}\n{sample_indices}')
-        embeddings = model.encode(samples, device=f'cuda:{rank}', convert_to_tensor=True, batch_size=512)
+    for batch, sample_indices in dataloader:
+        batch = batch_to_device(batch, model.device)
+        
+        with torch.no_grad():
+            out = model(**batch)
+            embeddings = post_processing(**out, **batch, sample_indices=sample_indices)
+        sample_indices_unique = sample_indices.unique()
 
-        # print(f"rank {rank} successful forward")
-        uniques, inverse = torch.tensor(sample_indices).unique(return_inverse=True)
-        reduce_inds = inverse.view(inverse.size(0), 1).expand(-1, embeddings.size(1)).to(rank)
-        mean_embeddings = torch.zeros(uniques.size(0), embeddings.size(1)).to(rank)
-        # print(f"Device rank: {rank}. {reduce_inds} {embeddings}")
-        mean_embeddings.scatter_reduce_(dim=0, index=reduce_inds, src=embeddings, reduce='mean', include_self=False)
-        embeddings = torch.nn.functional.normalize(mean_embeddings, p=2, dim=1)
-
-        # if rank > 0:
-        #     dist.gather(embeddings)
-        #     dist.gather(uniques.to(rank))
-        # if rank == 0 and world_size > 1:
-        #     uniques = uniques.to(rank)
-        #     embeddings_list = [torch.zeros_like(embeddings) for _ in range(world_size)]
-        #     inds_list = [torch.zeros_like(uniques) for _ in range(world_size)]
-        #     dist.gather(embeddings, embeddings_list)
-        #     dist.gather(uniques, inds_list)
-        #     embeddings_gathered = torch.cat(embeddings_list, dim=0).cpu().numpy()
-        #     inds_gathered = torch.cat(inds_list, dim=0).cpu().numpy()
-        #     emb_array[inds_gathered,:] = embeddings_gathered
-        # elif rank == 0:
-        #     emb_array[uniques.cpu().numpy(),:] = embeddings.cpu().numpy()
+        if rank > 0:
+            dist.gather(embeddings)
+            dist.gather(sample_indices_unique.to(rank))
+        if rank == 0 and world_size > 1:
+            uniques = sample_indices_unique.to(rank)
+            embeddings_list = [torch.zeros_like(embeddings) for _ in range(world_size)]
+            inds_list = [torch.zeros_like(uniques) for _ in range(world_size)]
+            dist.gather(embeddings, embeddings_list)
+            dist.gather(uniques, inds_list)
+            embeddings_gathered = torch.cat(embeddings_list, dim=0).cpu().numpy()
+            inds_gathered = torch.cat(inds_list, dim=0).cpu().numpy()
+            emb_array[inds_gathered,:] = embeddings_gathered
+        elif rank == 0:
+            emb_array[sample_indices_unique.cpu().numpy(),:] = embeddings.cpu().numpy()
 
         if rank == 0:
-            pbar.update(len(uniques))
+            assert type(pbar) is tqdm
+            pbar.update(len(sample_indices_unique))
 
     if rank == 0:
+        assert type(pbar) is tqdm
         emb_array.flush()
         pbar.close()
 
     cleanup()
 
+POST_PROCESSING_FXNS = {
+    'post_processing_bert': post_process_bert,
+    }
+
+COLLATORS = {
+    'e5': E5Collator,
+}
 
 if __name__ == "__main__":
 
@@ -286,6 +253,8 @@ if __name__ == "__main__":
     parser.add_argument('--embedding_dim', default=768, type=int)
     parser.add_argument('--batch_size', default=8, type=int)
     parser.add_argument('--world_size', default=torch.cuda.device_count(), type=int)
+    parser.add_argument('--post_processing_fxn', default='post_processing_bert', type=str)
+    parser.add_argument('--collator', default="e5", type=str)
     args = parser.parse_args()
 
     # split = args.split
@@ -309,7 +278,8 @@ if __name__ == "__main__":
     if args.instruction.lower == "none":
         args.instruction = None
 
-    collator = E5Collator(tokenizer=tokenizer, chunk_size=args.max_seq_length, instruction=args.instruction)
+    collator = COLLATORS[args.collator.lower()](tokenizer=tokenizer, chunk_size=args.max_seq_length, instruction=args.instruction)
+    post_processing_fxn = POST_PROCESSING_FXNS[args.post_processing_fxn]
 
     world_size = args.world_size
     world_size = 1
@@ -326,6 +296,7 @@ if __name__ == "__main__":
             args.embedding_dim,
             args.batch_size,
             collator,
+            post_processing_fxn,
         ],
         nprocs=world_size
     )    
