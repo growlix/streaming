@@ -97,6 +97,11 @@ os.popen("cat tmp/out.table.bin.* > tmp/out.table.bin").read()
 print("Cleaning up")
 os.popen("mv tmp/out.table.bin %s.table.bin"%sys.argv[1]).read()
 
+print("Removing partial table files")
+for file in files:
+    os.remove(file)
+    os.remove(file+".table.bin")
+
 if os.path.exists(sys.argv[1]+".table.bin"):
     if os.path.getsize(sys.argv[1]+".table.bin")%os.path.getsize(sys.argv[1]) != 0:
         print("File size is wrong")

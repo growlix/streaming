@@ -5,6 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "make_suffix_array",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "/data-dedupe/streaming/scripts/deduplication/exact",
+            "justMyCode": true,
+            "args": [
+                "~/preprocessed/c4.val"
+            ]
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
