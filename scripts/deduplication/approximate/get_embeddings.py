@@ -313,7 +313,7 @@ if __name__ == "__main__":
     post_processing_fxn = POST_PROCESSING_FXNS[args.post_processing_fxn]
 
     world_size = args.world_size
-    world_size = 1
+    # world_size = 1
     mp.spawn(
         do_the_thing,
         args=[
