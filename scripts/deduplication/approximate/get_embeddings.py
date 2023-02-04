@@ -132,13 +132,13 @@ def avg_sequences(seq_embeddings: Tensor, sample_indices: Tensor):
 
 def post_process_bert(
     last_hidden_state: Tensor,
-    attention_mask: Tensor,
+    # attention_mask: Tensor,
     sample_indices: Tensor,
     **kwargs
     ):
 
-    seq_embeddings = avg_pool_tokens(last_hidden_state, attention_mask)
-    doc_embeddings = avg_sequences(seq_embeddings, sample_indices)
+    # seq_embeddings = avg_pool_tokens(last_hidden_state, attention_mask)
+    doc_embeddings = avg_sequences(last_hidden_state, sample_indices)
     doc_embeddings = torch.nn.functional.normalize(doc_embeddings, p=2, dim=1)
 
     return doc_embeddings
@@ -215,7 +215,9 @@ def do_the_thing(
             microbatches_out = []
             with torch.no_grad():
                 for microbatch in microbatches:
-                    microbatches_out.append(model(**microbatch))
+                    microbatch_out = model(**microbatch)
+                    microbatch_out['last_hidden_state'] = avg_pool_tokens(microbatch_out['last_hidden_state'], microbatch['attention_mask'])
+                    microbatches_out.append(microbatch_out)
             del microbatches
             # Aggregate microbatches
             out = microbatches_out[0]
@@ -233,6 +235,7 @@ def do_the_thing(
         else:
             with torch.no_grad():
                 out = model(**batch)
+                out['last_hidden_state'] = avg_pool_tokens(out['last_hidden_state'], batch['attention_mask'])
         embeddings = post_processing(**out, **batch, sample_indices=sample_indices)
         sample_indices_unique = sample_indices.unique()
 
@@ -283,8 +286,8 @@ if __name__ == "__main__":
     parser.add_argument('--tokenizer', default='intfloat/e5-base', type=str)
     parser.add_argument('--max_seq_length', default=512, type=int, help="Model's maximum accepted sequence length")
     parser.add_argument('--embedding_dim', default=768, type=int)
-    parser.add_argument('--batch_size_dataloader', default=64, type=int)
-    parser.add_argument('--batch_size_inference', default=128, type=int)
+    parser.add_argument('--batch_size_dataloader', default=256, type=int)
+    parser.add_argument('--batch_size_inference', default=512, type=int)
     parser.add_argument('--world_size', default=torch.cuda.device_count(), type=int)
     parser.add_argument('--post_processing_fxn', default='post_processing_bert', type=str)
     parser.add_argument('--collator', default="e5", type=str)
@@ -310,7 +313,7 @@ if __name__ == "__main__":
     post_processing_fxn = POST_PROCESSING_FXNS[args.post_processing_fxn]
 
     world_size = args.world_size
-    # world_size = 1
+    world_size = 1
     mp.spawn(
         do_the_thing,
         args=[
