@@ -201,7 +201,7 @@ def do_the_thing(
     dist.reduce(dataset_len,dst=0)
     if rank == 0:
         # File that we write to that contains embeddings
-        emb_array = np.memmap(file_name, dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
+        emb_array = np.memmap("/dev/shm/" + file_name, dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
 
     if rank == 0:
         pbar = tqdm(total=len(dataloader))
