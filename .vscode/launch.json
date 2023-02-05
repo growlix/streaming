@@ -45,6 +45,26 @@
             ]
         },
         {
+            "name": "Crate bytes and offsets",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--streaming_remote",
+                "s3://mosaicml-internal-dataset-c4/mds/2/" ,
+                "--streaming_local",
+                "/tmp/c4",
+                "--save_dir",
+                "~/preprocessed",
+                "--split",
+                "train",
+                "--name",
+                "c4"
+            ]
+        },        
+        {
             "name": "wiki40b",
             "type": "python",
             "request": "launch",
