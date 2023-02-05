@@ -125,7 +125,7 @@ def avg_sequences(seq_embeddings: Tensor, sample_indices: Tensor):
     try:
         sample_indices = sample_indices.to(curr_device)
     except Exception as e:
-        print(f'sample_indices: {sample_indices}]\nwith shape {sample_indices shape}]\non device {sample_indices.device}')
+        print(f'sample_indices: {sample_indices}]\nwith shape {sample_indices.shape}]\non device {sample_indices.device}')
         print(f'curr device: {curr_device}')
         raise e
     uniques, inverse = sample_indices.unique(return_inverse=True)
