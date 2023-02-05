@@ -78,16 +78,16 @@ def tok(x):
 if not os.path.exists(save_dir):
     os.mkdir(save_dir)
 
-fout = open(os.path.join(save_dir, dataset_name+"."+split), "wb")
-
 sizes = [0]
-for sample in tqdm(dataset):
+with open(os.path.join(save_dir, dataset_name+"."+split), "wb") as fout:
+    for sample in tqdm(dataset):
 
-    text = bytes(sample['text'], 'utf-8')
-    text = tok(text)
-    
-    next_line = sep()+text
-    fout.write(next_line)
-    sizes.append(sizes[-1]+len(next_line))
+        text = bytes(sample['text'], 'utf-8')
+        text = tok(text)
+        
+        next_line = sep()+text
+        fout.write(next_line)
+        sizes.append(sizes[-1]+len(next_line))
 
-open(os.path.join(save_dir,dataset_name+"."+split+".size"), "wb").write(np.array(sizes,dtype=np.uint64).tobytes())
+with open(os.path.join(save_dir,dataset_name+"."+split+".size"), "wb") as sizes_file:
+    sizes_file.write(np.array(sizes,dtype=np.uint64).tobytes())

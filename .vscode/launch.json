@@ -59,7 +59,7 @@
                 "--save_dir",
                 "~/preprocessed",
                 "--split",
-                "train",
+                "val",
                 "--name",
                 "c4"
             ]
