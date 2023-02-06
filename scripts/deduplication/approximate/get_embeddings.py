@@ -206,7 +206,7 @@ def do_the_thing(
 
     model.eval()
 
-    model = torch.nn.DataParallel(model, device_ids=[0, 1, 2, 3])
+    model = torch.nn.DataParallel(model, device_ids=[0, 1, 2, 3, 4, 5, 6, 7])
 
     dataset_len = torch.tensor(len(dataset), device=rank)
     # dist.reduce(dataset_len,dst=0)
