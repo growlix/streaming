@@ -142,3 +142,6 @@ dmypy.json
 
 # OS X
 *.DS_Store
+
+# Rust
+Cargo.lock
