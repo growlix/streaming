@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Mapping, Tuple, Union
 from transformers import AutoTokenizer, AutoModel
 from torch.profiler import profile, record_function, ProfilerActivity
 import datetime
+import logging
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = '127.0.0.1'
@@ -276,7 +277,7 @@ def do_the_thing(
                 total = pbar.format_dict['total'] 
                 elapsed = str(datetime.timedelta(seconds=pbar.format_dict['elapsed'])).split('.')[0]
                 est_total = str(datetime.timedelta(seconds=pbar.format_dict["total"]/pbar.format_dict["rate"])).split(".")[0]
-                print(f'{current} of {total} Samples ---- Elapsed: {elapsed} ---- Estimated Total: {est_total}')
+                logging.info(f'{current} of {total} Samples ---- Elapsed: {elapsed} ---- Estimated Total: {est_total}')
 
     if rank == 0:
         assert type(pbar) is tqdm
