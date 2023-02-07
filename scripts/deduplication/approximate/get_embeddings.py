@@ -9,6 +9,8 @@ import argparse
 import numpy as np
 from typing import Any, Callable, Dict, List, Mapping, Tuple, Union
 from transformers import AutoTokenizer, AutoModel
+from torch.profiler import profile, record_function, ProfilerActivity
+import datetime
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = '127.0.0.1'
@@ -57,8 +59,34 @@ def batch_to_device(batch, target_device: device):
             batch[key] = batch[key].to(target_device)
     return batch
 
-# Custom collate function that will get our data into the appropriate input format for the
-# encoder
+def chunk_tokens_bert(text: List[str], tokenizer: Callable, chunk_size: int, instruction: Union[str, None]=None):
+    # Tokenize instruction (if we have one)
+    if instruction is not None:
+        instruction_tokenized = tokenizer(instruction, truncation=False, max_length=False, return_tensors='pt')
+        # Strip the beginning ([CLS]) and final ([SEP]) tokens.
+        instruction_tokenized = {k: v[:,1:-1] for k, v in instruction_tokenized.items()}
+        instruction_length = instruction_tokenized['input_ids'].shape[1]
+    else:
+        instruction_tokenized = None
+        instruction_length = 0
+    # Account for the size of the instruction when chunking - reduce chunk_size by
+    # instruction_length
+    max_length = chunk_size - instruction_length
+    # Tokenize
+    input_tokenized = tokenizer(text, truncation=True, max_length=max_length, return_tensors='pt', return_overflowing_tokens=True, padding=True)
+    # Insert the instruction into the tokenized input at index = 1 (after the [CLS]
+    # token and before the input text)
+    if instruction is not None:
+        assert type(instruction_tokenized) is dict
+        for k, instruction_value in instruction_tokenized.items():
+            input_value = input_tokenized[k]
+            input_tokenized[k] = torch.cat([
+                input_value[:,0:1],
+                instruction_value.repeat(input_value.shape[0], 1),
+                input_value[:, 1:]
+                ], 1)
+    return input_tokenized
+
 class E5Collator:
     def __init__(self, tokenizer=None, chunk_size: int=512, instruction: Union[str, None]=None) -> None:
         
@@ -66,50 +94,13 @@ class E5Collator:
         self.chunk_size = chunk_size
         self.instruction = instruction
 
-    def _chunk_tokens(self, text: List[str], chunk_size=None, instruction=None):
-        # Make sure there's a tokenizer
-        assert self.tokenizer
-        if chunk_size is None:
-            chunk_size = self.chunk_size
-            # If we never set a chunk size, default to using the tokenizer's maximum sequence length
-            if chunk_size is None:
-                chunk_size = self.tokenizer.model_max_length
-        if instruction is None:
-            instruction = self.instruction
-        # Tokenize instruction (if we have one)
-        if instruction is not None:
-            instruction_tokenized = self.tokenizer(instruction, truncation=False, max_length=False, return_tensors='pt')
-            # Strip the beginning ([CLS]) and final ([SEP]) tokens.
-            instruction_tokenized = {k: v[:,1:-1] for k, v in instruction_tokenized.items()}
-            instruction_length = instruction_tokenized['input_ids'].shape[1]
-        else:
-            instruction_tokenized = None
-            instruction_length = 0
-        # Account for the size of the instruction when chunking - reduce chunk_size by
-        # instruction_length
-        max_length = chunk_size - instruction_length
-        # Tokenize
-        input_tokenized = self.tokenizer(text, truncation=True, max_length=max_length, return_tensors='pt', return_overflowing_tokens=True, padding=True)
-        # Insert the instruction into the tokenized input at index = 1 (after the [CLS]
-        # token and before the input text)
-        if instruction is not None:
-            assert type(instruction_tokenized) is dict
-            for k, instruction_value in instruction_tokenized.items():
-                input_value = input_tokenized[k]
-                input_tokenized[k] = torch.cat([
-                    input_value[:,0:1],
-                    instruction_value.repeat(input_value.shape[0], 1),
-                    input_value[:, 1:]
-                    ], 1)
-        return input_tokenized
-
     def __call__(self, samples: List) -> Tuple[Dict[str, Tensor], Tensor]:
         sample_indices = []
         texts = []
         for sample in samples:
             texts.append(sample[0]['text'])
             sample_indices.append(sample[1])
-        samples_tokenized = self._chunk_tokens(texts)
+        samples_tokenized = chunk_tokens_bert(text=texts, tokenizer=self.tokenizer, chunk_size=self.chunk_size, instruction=self.instruction)
         _, counts = samples_tokenized['overflow_to_sample_mapping'].unique(return_counts=True)
         sample_indices = torch.tensor(sample_indices).repeat_interleave(repeats=counts)
         samples_tokenized.pop('overflow_to_sample_mapping')
@@ -158,6 +149,22 @@ def subdivide_batch(batch: Mapping, batch_size: int):
             inds = (i, i + batch_size)
         batches.append({k: v[inds[0]:inds[1], :] for k, v in batch.items()})
     return batches
+
+
+class WrappedE5(torch.nn.Module):
+    def __init__(self, model_name):
+        super().__init__()
+        self.backbone = AutoModel.from_pretrained(model_name)
+
+    def avg_pool_tokens(self, last_hidden_state: Tensor, attention_mask: Tensor) -> Tensor:
+        attention_mask = attention_mask.to(last_hidden_state.device)
+        last_hidden = last_hidden_state.masked_fill(~attention_mask[..., None].bool(), 0.0)
+        return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
+    
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        out = self.backbone(*args, **kwds)
+        out['last_hidden_state'] = self.avg_pool_tokens(out['last_hidden_state'], kwds['attention_mask'])
+        return out
 
 
 def do_the_thing(
@@ -209,20 +216,21 @@ def do_the_thing(
         emb_array = np.memmap(file_name, dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
 
     if rank == 0:
-        pbar = tqdm(total=len(dataloader))
+        pbar = tqdm(total=dataset_len.item())
+        total = dataset_len.item()
     else:
         pbar = None
-
     for batch, sample_indices in dataloader:
         batch = batch_to_device(batch, model.device)
         if isinstance(batch, Mapping) and batch['input_ids'].shape[0] > batch_size_inference:
             microbatches = subdivide_batch(batch, batch_size_inference)
             microbatches_out = []
             with torch.no_grad():
-                for microbatch in microbatches:
-                    microbatch_out = model(**microbatch)
-                    microbatch_out['last_hidden_state'] = avg_pool_tokens(microbatch_out['last_hidden_state'], microbatch['attention_mask'])
-                    microbatches_out.append(microbatch_out)
+                with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=True):
+                    for microbatch in microbatches:
+                        microbatch_out = model(**microbatch)
+                        microbatch_out['last_hidden_state'] = avg_pool_tokens(microbatch_out['last_hidden_state'], microbatch['attention_mask'])
+                        microbatches_out.append(microbatch_out)
             del microbatches
             # Aggregate microbatches
             out = microbatches_out[0]
@@ -261,13 +269,20 @@ def do_the_thing(
 
         if rank == 0:
             assert type(pbar) is tqdm
-            pbar.update(len(sample_indices_unique))
+            update_size = len(sample_indices_unique)
+            pbar.update(update_size)
+            current = pbar.format_dict['n']
+            if current == update_size or current%(update_size * 10):
+                total = pbar.format_dict['total'] 
+                elapsed = str(datetime.timedelta(seconds=pbar.format_dict['elapsed'])).split('.')[0]
+                est_total = str(datetime.timedelta(seconds=pbar.format_dict["total"]/pbar.format_dict["rate"])).split(".")[0]
+                print(f'{current} of {total} Samples ---- Elapsed: {elapsed} ---- Estimated Total: {est_total}')
 
     if rank == 0:
         assert type(pbar) is tqdm
         emb_array.flush()
         pbar.close()
-
+    prof.export_stacks(f"/tmp/embeddings_cuda_rank{rank}.txt", "self_cuda_time_total")
     cleanup()
 
 POST_PROCESSING_FXNS = {
@@ -291,8 +306,8 @@ if __name__ == "__main__":
     parser.add_argument('--tokenizer', default='intfloat/e5-base', type=str)
     parser.add_argument('--max_seq_length', default=512, type=int, help="Model's maximum accepted sequence length")
     parser.add_argument('--embedding_dim', default=768, type=int)
-    parser.add_argument('--batch_size_dataloader', default=256, type=int)
-    parser.add_argument('--batch_size_inference', default=512, type=int)
+    parser.add_argument('--batch_size_dataloader', default=320, type=int)
+    parser.add_argument('--batch_size_inference', default=640, type=int)
     parser.add_argument('--world_size', default=torch.cuda.device_count(), type=int)
     parser.add_argument('--post_processing_fxn', default='post_processing_bert', type=str)
     parser.add_argument('--collator', default="e5", type=str)
