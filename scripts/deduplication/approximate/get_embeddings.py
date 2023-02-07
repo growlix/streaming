@@ -282,7 +282,6 @@ def do_the_thing(
         assert type(pbar) is tqdm
         emb_array.flush()
         pbar.close()
-    prof.export_stacks(f"/tmp/embeddings_cuda_rank{rank}.txt", "self_cuda_time_total")
     cleanup()
 
 POST_PROCESSING_FXNS = {
