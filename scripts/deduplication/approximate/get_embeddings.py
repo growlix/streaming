@@ -215,6 +215,7 @@ def do_the_thing(
     if rank == 0:
         # File that we write to that contains embeddings
         emb_array = np.memmap(file_name, dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
+        logging.basicConfig(filename='rank0.log', encoding='utf-8', level=logging.DEBUG)
 
     if rank == 0:
         pbar = tqdm(total=dataset_len.item())
