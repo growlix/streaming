@@ -182,9 +182,13 @@ def do_the_thing(
     batch_size_inference: int,
     collator: Callable,
     post_processing: Callable,
+    device_ids: Union[List, None]=None,
+    parallel_strategy: str='mp',
+    **kwargs,
     ):
 
-    setup(rank, world_size)
+    if parallel_strategy == 'mp':
+        setup(rank, world_size)
 
     dataset = StreamingDatasetIndexed(
         local=streaming_local,
@@ -202,16 +206,21 @@ def do_the_thing(
     )
 
     if rank == 0:
-        model = AutoModel.from_pretrained(model_name).to(rank)
-    dist.barrier()
+        model = WrappedE5(model_name).to(rank)
+    if parallel_strategy == 'mp':
+        dist.barrier()
     if rank > 0:
-        model = AutoModel.from_pretrained(model_name).to(rank)
-    dist.barrier()
+        model = WrappedE5(model_name).to(rank)
+    if parallel_strategy == 'mp':
+        dist.barrier()
 
+    if parallel_strategy == 'dp':
+        model = torch.nn.DataParallel(model, device_ids=device_ids)
     model.eval()
 
     dataset_len = torch.tensor(len(dataset), device=rank)
-    dist.reduce(dataset_len,dst=0)
+    if parallel_strategy == 'dp':
+        dist.reduce(dataset_len,dst=0)
     if rank == 0:
         # File that we write to that contains embeddings
         emb_array = np.memmap(file_name, dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
@@ -231,7 +240,7 @@ def do_the_thing(
                 with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=True):
                     for microbatch in microbatches:
                         microbatch_out = model(**microbatch)
-                        microbatch_out['last_hidden_state'] = avg_pool_tokens(microbatch_out['last_hidden_state'], microbatch['attention_mask'])
+                        # microbatch_out['last_hidden_state'] = avg_pool_tokens(microbatch_out['last_hidden_state'], microbatch['attention_mask'])
                         microbatches_out.append(microbatch_out)
             del microbatches
             # Aggregate microbatches
@@ -250,7 +259,7 @@ def do_the_thing(
         else:
             with torch.no_grad():
                 out = model(**batch)
-                out['last_hidden_state'] = avg_pool_tokens(out['last_hidden_state'], batch['attention_mask'])
+                # out['last_hidden_state'] = avg_pool_tokens(out['last_hidden_state'], batch['attention_mask'])
         embeddings = post_processing(**out, **batch, sample_indices=sample_indices)
         sample_indices_unique = sample_indices.unique()
 
@@ -284,7 +293,8 @@ def do_the_thing(
         assert type(pbar) is tqdm
         emb_array.flush()
         pbar.close()
-    cleanup()
+    if parallel_strategy == 'mp':
+        cleanup()
 
 POST_PROCESSING_FXNS = {
     'post_processing_bert': post_process_bert,
@@ -311,7 +321,8 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size_inference', default=640, type=int)
     parser.add_argument('--world_size', default=torch.cuda.device_count(), type=int)
     parser.add_argument('--post_processing_fxn', default='post_processing_bert', type=str)
-    parser.add_argument('--collator', default="e5", type=str)
+    parser.add_argument('--collator', default='e5', type=str)
+    parser.add_argument('--parallel_strategy', default='dp', type=str, help="mp (multiprocessing) or dp (Data Parallel)")
     args = parser.parse_args()
 
     if args.streaming_remote.lower() == "none":
@@ -335,21 +346,27 @@ if __name__ == "__main__":
 
     world_size = args.world_size
     # world_size = 1
-    mp.spawn(
-        do_the_thing,
-        args=[
-            world_size,
-            args.streaming_remote,
-            args.streaming_local,
-            args.save_dir,
-            args.split,
-            args.file_name,
-            args.model_name,
-            args.embedding_dim,
-            args.batch_size_dataloader,
-            args.batch_size_inference,
-            collator,
-            post_processing_fxn,
-        ],
-        nprocs=world_size
-    )    
+    if args.parallel_strategy == 'mp':
+        mp.spawn(
+            do_the_thing,
+            args=[
+                world_size,
+                args.streaming_remote,
+                args.streaming_local,
+                args.save_dir,
+                args.split,
+                args.file_name,
+                args.model_name,
+                args.embedding_dim,
+                args.batch_size_dataloader,
+                args.batch_size_inference,
+                collator,
+                post_processing_fxn,
+                None,
+                args.parallel_strategy,
+            ],
+            nprocs=world_size
+        )    
+    elif args.parallel_strategy == 'dp':
+        device_ids = list(range(world_size))
+        do_the_thing(**vars(args), collator=collator, post_processing=post_processing_fxn, device_ids=device_ids)
