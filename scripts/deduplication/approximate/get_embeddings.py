@@ -223,7 +223,7 @@ def do_the_thing(
     else:
         pbar = None
     for batch, sample_indices in dataloader:
-        batch = batch_to_device(batch, model.device)
+        batch = batch_to_device(batch, model.device) # Move this to microbatch level
         if isinstance(batch, Mapping) and batch['input_ids'].shape[0] > batch_size_inference:
             microbatches = subdivide_batch(batch, batch_size_inference)
             microbatches_out = []
