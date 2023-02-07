@@ -117,7 +117,6 @@ class E5Collator:
 
 def avg_pool_tokens(last_hidden_states: Tensor,
                  attention_mask: Tensor) -> Tensor:
-    attention_mask = attention_mask.to(last_hidden_states.device)
     last_hidden = last_hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
     return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
 
@@ -175,12 +174,9 @@ def do_the_thing(
     batch_size_inference: int,
     collator: Callable,
     post_processing: Callable,
-    **kwargs,
     ):
 
-    # setup(rank, world_size)
-    os.environ['WORLD_SIZE'] = f'{world_size}'
-    os.environ['RANK'] = f'{rank}'
+    setup(rank, world_size)
 
     dataset = StreamingDatasetIndexed(
         local=streaming_local,
@@ -199,17 +195,15 @@ def do_the_thing(
 
     if rank == 0:
         model = AutoModel.from_pretrained(model_name).to(rank)
-    # dist.barrier()
+    dist.barrier()
     if rank > 0:
         model = AutoModel.from_pretrained(model_name).to(rank)
-    # dist.barrier()
+    dist.barrier()
 
     model.eval()
 
-    model = torch.nn.DataParallel(model, device_ids=[0, 1, 2, 3, 4, 5, 6, 7])
-
     dataset_len = torch.tensor(len(dataset), device=rank)
-    # dist.reduce(dataset_len,dst=0)
+    dist.reduce(dataset_len,dst=0)
     if rank == 0:
         # File that we write to that contains embeddings
         emb_array = np.memmap(file_name, dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
@@ -220,7 +214,7 @@ def do_the_thing(
         pbar = None
 
     for batch, sample_indices in dataloader:
-        # batch = batch_to_device(batch, model.device)
+        batch = batch_to_device(batch, model.device)
         if isinstance(batch, Mapping) and batch['input_ids'].shape[0] > batch_size_inference:
             microbatches = subdivide_batch(batch, batch_size_inference)
             microbatches_out = []
@@ -274,7 +268,7 @@ def do_the_thing(
         emb_array.flush()
         pbar.close()
 
-    # cleanup()
+    cleanup()
 
 POST_PROCESSING_FXNS = {
     'post_processing_bert': post_process_bert,
@@ -297,8 +291,8 @@ if __name__ == "__main__":
     parser.add_argument('--tokenizer', default='intfloat/e5-base', type=str)
     parser.add_argument('--max_seq_length', default=512, type=int, help="Model's maximum accepted sequence length")
     parser.add_argument('--embedding_dim', default=768, type=int)
-    parser.add_argument('--batch_size_dataloader', default=1536, type=int)
-    parser.add_argument('--batch_size_inference', default=3072, type=int)
+    parser.add_argument('--batch_size_dataloader', default=256, type=int)
+    parser.add_argument('--batch_size_inference', default=512, type=int)
     parser.add_argument('--world_size', default=torch.cuda.device_count(), type=int)
     parser.add_argument('--post_processing_fxn', default='post_processing_bert', type=str)
     parser.add_argument('--collator', default="e5", type=str)
@@ -324,28 +318,22 @@ if __name__ == "__main__":
     post_processing_fxn = POST_PROCESSING_FXNS[args.post_processing_fxn]
 
     world_size = args.world_size
-    args.world_size = 1
-    args.collator = collator
-    # mp.spawn(
-    #     do_the_thing,
-    #     args=[
-    #         world_size,
-    #         args.streaming_remote,
-    #         args.streaming_local,
-    #         args.save_dir,
-    #         args.split,
-    #         args.file_name,
-    #         args.model_name,
-    #         args.embedding_dim,
-    #         args.batch_size_dataloader,
-    #         args.batch_size_inference,
-    #         collator,
-    #         post_processing_fxn,
-    #     ],
-    #     nprocs=world_size
-    # )    
-    do_the_thing(
-        rank=0,
-        post_processing=post_processing_fxn,
-        **vars(args)
-    )
+    # world_size = 1
+    mp.spawn(
+        do_the_thing,
+        args=[
+            world_size,
+            args.streaming_remote,
+            args.streaming_local,
+            args.save_dir,
+            args.split,
+            args.file_name,
+            args.model_name,
+            args.embedding_dim,
+            args.batch_size_dataloader,
+            args.batch_size_inference,
+            collator,
+            post_processing_fxn,
+        ],
+        nprocs=world_size
+    )    
