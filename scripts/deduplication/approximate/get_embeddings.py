@@ -229,7 +229,8 @@ def do_the_thing(
     if parallel_strategy == 'mp':
         dist.reduce(dataset_len,dst=0)
     # File that we write to that contains embeddings
-    emb_array = np.memmap(f'rank{rank}_{file_name}', dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
+    rank_filename = f'rank{rank}_{file_name}'
+    emb_array = np.memmap(rank_filename, dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
 
     if rank == 0:
         pbar = tqdm(total=dataset_len.item())
@@ -256,13 +257,14 @@ def do_the_thing(
             out = microbatches_out[0]
             for i, microbatch_out in enumerate(microbatches_out[1:], 1):
                 for k, v in microbatch_out.items():
-                    new_shape = v.shape
-                    existing_shape = out[k].shape
-                    try:
+                    # new_shape = v.shape
+                    # existing_shape = out[k].shape
+                    # try:
+                    if v is not None:
                         out[k] = torch.cat([out[k], v], 0)
-                    except torch.cuda.OutOfMemoryError as e:
-                        print(f'Concating tensor of shapes {existing_shape} and {new_shape}\n')
-                        raise e
+                    # except torch.cuda.OutOfMemoryError as e:
+                    #     print(f'Concating tensor of shapes {existing_shape} and {new_shape}\n')
+                    #     raise e
                 microbatches_out[i] = []
             del microbatches_out
         else:
@@ -308,6 +310,9 @@ def do_the_thing(
         
         pbar.close()
     emb_array.flush()
+    
+    if rank == 0:
+        os.rename(rank_filename, file_name)
     if parallel_strategy == 'mp':
         cleanup()
 
