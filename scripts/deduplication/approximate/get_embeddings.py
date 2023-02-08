@@ -173,6 +173,18 @@ class WrappedE5(torch.nn.Module):
         return out
 
 
+def merge_memmaps(filename: str, rank0_filename: str, destination_memmap: np.memmap) -> None:
+    memmap_files = [f for f in os.listdir() if filename in f]
+    memmap_files.remove(rank0_filename)
+    for memmap_file in memmap_files:
+        source_memmap = np.memmap(memmap_file, dtype='float32', mode="r", shape=destination_memmap.shape)
+        source_inds = source_memmap[:,0].nonzero()[0]
+        destination_memmap[source_inds,:] = source_memmap[source_inds,:]
+        destination_memmap.flush()
+        del source_memmap
+        os.remove(memmap_file)
+        
+
 def do_the_thing(
     rank: int,
     world_size: int,
@@ -223,18 +235,16 @@ def do_the_thing(
         model = torch.nn.DataParallel(model, device_ids=device_ids)
     model.eval()
 
-    dataset_len = torch.tensor(len(dataset), device=rank)
+    dataset_len = dataset.index.total_samples
     if rank == 0:
         logging.basicConfig(filename='rank0.log', encoding='utf-8', level=logging.DEBUG)
-    if parallel_strategy == 'mp':
-        dist.all_reduce(dataset_len)
     # File that we write to that contains embeddings
     rank_filename = f'rank{rank}_{file_name}'
-    emb_array = np.memmap(rank_filename, dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
+    emb_array = np.memmap(rank_filename, dtype='float32', mode='w+', shape=(int(dataset_len), embedding_dim))
 
     if rank == 0:
-        pbar = tqdm(total=dataset_len.item())
-        total = dataset_len.item()
+        pbar = tqdm(total=dataset_len)
+        # total = dataset_len
     else:
         pbar = None
     for batch, sample_indices in dataloader:
@@ -276,6 +286,11 @@ def do_the_thing(
         embeddings = post_processing(**out, **batch, sample_indices=sample_indices)
         sample_indices_unique = sample_indices.unique()
 
+        zero_embeddings = torch.where(embeddings[:,0] == 0)[0]
+        if len(zero_embeddings) > 0:
+            logging.warning(f"zero-value embeddings for samples {sample_indices_unique[zero_embeddings]}")
+        
+
         # if rank > 0:
         #     dist.gather(embeddings.to)
         #     dist.gather(sample_indices_unique.to(rank))
@@ -310,10 +325,16 @@ def do_the_thing(
         
         pbar.close()
     emb_array.flush()
+    if parallel_strategy == 'mp':
+        dist.barrier()
 
     if rank == 0:
+        if parallel_strategy == 'mp':
+            print("Merging arrays from different ranks")
+            merge_memmaps(filename=file_name, rank0_filename=rank_filename, destination_memmap=emb_array)
         os.rename(rank_filename, file_name)
     if parallel_strategy == 'mp':
+        dist.barrier()
         cleanup()
 
 POST_PROCESSING_FXNS = {

@@ -59,7 +59,7 @@
                 "--save_dir",
                 "~/preprocessed",
                 "--split",
-                "train",
+                "val",
                 "--batch_size_dataloader",
                 "1280",
                 "--batch_size_inference",
@@ -81,7 +81,7 @@
                 "--save_dir",
                 "~/preprocessed",
                 "--split",
-                "train",
+                "val",
                 "--parallel_strategy",
                 "mp"
             ]
