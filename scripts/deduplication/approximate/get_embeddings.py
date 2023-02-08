@@ -200,7 +200,7 @@ def do_the_thing(
     collator: Callable,
     post_processing: Callable,
     device_ids: Union[List, None]=None,
-    parallel_strategy: str='mp',
+    parallel_strategy: str='dp',
     **kwargs,
     ):
 
