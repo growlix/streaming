@@ -67,6 +67,26 @@
             ]
         },
         {
+            "name": "get_embeddings raw multiprocessing pile",
+            "type": "python",
+            "request": "launch",
+            "program": "scripts/deduplication/approximate/get_embeddings.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--streaming_remote",
+                "s3://mosaicml-internal-dataset-the-pile/mds/2/",
+                "--streaming_local",
+                "/tmp/pile",
+                "--save_dir",
+                "~/preprocessed",
+                "--split",
+                "train",
+                "--parallel_strategy",
+                "mp"
+            ]
+        },
+        {
             "name": "Crate bytes and offsets",
             "type": "python",
             "request": "launch",

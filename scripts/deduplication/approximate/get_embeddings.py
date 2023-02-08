@@ -142,20 +142,24 @@ def post_process_bert(
 
 def subdivide_batch(batch: Mapping, batch_size: int):
     n_samples = batch['input_ids'].shape[0]
-    batches = []
+    # batches = []
     for i in range(0, n_samples, batch_size):
         if i + batch_size > n_samples:
             inds = (i, n_samples)
         else:
             inds = (i, i + batch_size)
-        batches.append({k: v[inds[0]:inds[1], :] for k, v in batch.items()})
-    return batches
+        yield {k: v[inds[0]:inds[1], :] for k, v in batch.items()}
+    # return batches
 
 
 class WrappedE5(torch.nn.Module):
     def __init__(self, model_name):
         super().__init__()
         self.backbone = AutoModel.from_pretrained(model_name)
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
 
     def avg_pool_tokens(self, last_hidden_state: Tensor, attention_mask: Tensor) -> Tensor:
         attention_mask = attention_mask.to(last_hidden_state.device)
@@ -164,6 +168,7 @@ class WrappedE5(torch.nn.Module):
     
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         out = self.backbone(*args, **kwds)
+        out['pooler_output'] = None
         out['last_hidden_state'] = self.avg_pool_tokens(out['last_hidden_state'], kwds['attention_mask'])
         return out
 
@@ -219,12 +224,12 @@ def do_the_thing(
     model.eval()
 
     dataset_len = torch.tensor(len(dataset), device=rank)
-    if parallel_strategy == 'dp':
-        dist.reduce(dataset_len,dst=0)
     if rank == 0:
-        # File that we write to that contains embeddings
-        emb_array = np.memmap(file_name, dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
         logging.basicConfig(filename='rank0.log', encoding='utf-8', level=logging.DEBUG)
+    if parallel_strategy == 'mp':
+        dist.reduce(dataset_len,dst=0)
+    # File that we write to that contains embeddings
+    emb_array = np.memmap(f'rank{rank}_{file_name}', dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
 
     if rank == 0:
         pbar = tqdm(total=dataset_len.item())
@@ -232,17 +237,21 @@ def do_the_thing(
     else:
         pbar = None
     for batch, sample_indices in dataloader:
-        batch = batch_to_device(batch, model.device) # Move this to microbatch level
+        if parallel_strategy == 'mp':
+            batch = batch_to_device(batch, model.device) # Move this to microbatch level
         if isinstance(batch, Mapping) and batch['input_ids'].shape[0] > batch_size_inference:
-            microbatches = subdivide_batch(batch, batch_size_inference)
+            # microbatches = subdivide_batch(batch, batch_size_inference)
             microbatches_out = []
             with torch.no_grad():
                 with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=True):
-                    for microbatch in microbatches:
+                    for microbatch in subdivide_batch(batch, batch_size_inference):
                         microbatch_out = model(**microbatch)
-                        # microbatch_out['last_hidden_state'] = avg_pool_tokens(microbatch_out['last_hidden_state'], microbatch['attention_mask'])
+                        # microbatch_out['last_hidden_state'] =
+                        # avg_pool_tokens(microbatch_out['last_hidden_state'],
+                        # microbatch['attention_mask'])
+                        microbatch_out = batch_to_device(microbatch_out, torch.device('cpu'))
                         microbatches_out.append(microbatch_out)
-            del microbatches
+            # del microbatches
             # Aggregate microbatches
             out = microbatches_out[0]
             for i, microbatch_out in enumerate(microbatches_out[1:], 1):
@@ -258,29 +267,34 @@ def do_the_thing(
             del microbatches_out
         else:
             with torch.no_grad():
-                out = model(**batch)
+                with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=True):
+                    out = model(**batch)
+                    out = batch_to_device(out, torch.device('cpu'))
                 # out['last_hidden_state'] = avg_pool_tokens(out['last_hidden_state'], batch['attention_mask'])
         embeddings = post_processing(**out, **batch, sample_indices=sample_indices)
         sample_indices_unique = sample_indices.unique()
 
-        if rank > 0:
-            dist.gather(embeddings)
-            dist.gather(sample_indices_unique.to(rank))
-        if rank == 0 and world_size > 1:
-            uniques = sample_indices_unique.to(rank)
-            embeddings_list = [torch.zeros_like(embeddings) for _ in range(world_size)]
-            inds_list = [torch.zeros_like(uniques) for _ in range(world_size)]
-            dist.gather(embeddings, embeddings_list)
-            dist.gather(uniques, inds_list)
-            embeddings_gathered = torch.cat(embeddings_list, dim=0).cpu().numpy()
-            inds_gathered = torch.cat(inds_list, dim=0).cpu().numpy()
-            emb_array[inds_gathered,:] = embeddings_gathered
-        elif rank == 0:
-            emb_array[sample_indices_unique.cpu().numpy(),:] = embeddings.cpu().numpy()
+        # if rank > 0:
+        #     dist.gather(embeddings.to)
+        #     dist.gather(sample_indices_unique.to(rank))
+        # if rank == 0 and parallel_strategy == 'mp':
+        #     uniques = sample_indices_unique.to(rank)
+        #     embeddings_list = [torch.zeros_like(embeddings) for _ in range(world_size)]
+        #     inds_list = [torch.zeros_like(uniques) for _ in range(world_size)]
+        #     dist.gather(embeddings, embeddings_list)
+        #     dist.gather(uniques, inds_list)
+        #     embeddings_gathered = torch.cat(embeddings_list, dim=0).cpu().numpy()
+        #     inds_gathered = torch.cat(inds_list, dim=0).cpu().numpy()
+        #     emb_array[inds_gathered,:] = embeddings_gathered
+        # else:
+        #     emb_array[sample_indices_unique.cpu().numpy(),:] = embeddings.cpu().numpy()
+        emb_array[sample_indices_unique.numpy(),:] = embeddings.numpy()
 
         if rank == 0:
             assert type(pbar) is tqdm
             update_size = len(sample_indices_unique)
+            if parallel_strategy == 'mp':
+                update_size *= world_size
             pbar.update(update_size)
             current = pbar.format_dict['n']
             if current == update_size or current%(update_size * 10):
@@ -291,8 +305,9 @@ def do_the_thing(
 
     if rank == 0:
         assert type(pbar) is tqdm
-        emb_array.flush()
+        
         pbar.close()
+    emb_array.flush()
     if parallel_strategy == 'mp':
         cleanup()
 
@@ -369,4 +384,6 @@ if __name__ == "__main__":
         )    
     elif args.parallel_strategy == 'dp':
         device_ids = list(range(world_size))
-        do_the_thing(**vars(args), collator=collator, post_processing=post_processing_fxn, device_ids=device_ids)
+        args.world_size = 1
+        args.collator = collator
+        do_the_thing(rank=0, **vars(args), post_processing=post_processing_fxn, device_ids=device_ids)
