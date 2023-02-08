@@ -227,7 +227,7 @@ def do_the_thing(
     if rank == 0:
         logging.basicConfig(filename='rank0.log', encoding='utf-8', level=logging.DEBUG)
     if parallel_strategy == 'mp':
-        dist.reduce(dataset_len,dst=0)
+        dist.all_reduce(dataset_len)
     # File that we write to that contains embeddings
     rank_filename = f'rank{rank}_{file_name}'
     emb_array = np.memmap(rank_filename, dtype='float32', mode='w+', shape=(int(dataset_len.item()), embedding_dim))
@@ -310,7 +310,7 @@ def do_the_thing(
         
         pbar.close()
     emb_array.flush()
-    
+
     if rank == 0:
         os.rename(rank_filename, file_name)
     if parallel_strategy == 'mp':
