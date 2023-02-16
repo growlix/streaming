@@ -9,19 +9,22 @@ import pandas as pd
 import os
 import pickle
 
-get all the emb - use "pretrained" openclip/ or the Kushal used - store them as np memmap - don't forget to (layer) normalize each single emb (use torch.normalize)
+# get all the emb - use "pretrained" openclip/ or the Kushal used - store them as np memmap - don't forget to (layer) normalize each single emb (use torch.normalize)
 
-kmeans clustering with faiss, choose the number of cluster, 50K, 20K
+# kmeans clustering with faiss, choose the number of cluster, 50K, 20K
 
-emb_array = np.memmap('EMB_MEMORY.npy', dtype='float32', mode='w+', shape=SHAPE)
-emb_array[0] = .....
-emb_array = np.memmap('EMB_MEMORY.npy', dtype='float32', mode='r+', shape=SHAPE)
-emb_array[0]
+# emb_array = np.memmap('EMB_MEMORY.npy', dtype='float32', mode='w+', shape=SHAPE)
+# emb_array[0] = .....
+# emb_array = np.memmap('EMB_MEMORY.npy', dtype='float32', mode='r+', shape=SHAPE)
+# emb_array[0]
 
+logger = logging.getLogger(__name__)
+logging.basicConfig()
+logger.setLevel(logging.INFO)
 
 def kmeans_clustering(data: np.ndarray, paths_list: np.ndarray , ncentroids: int=1000, niter: int=100, seed: int=1234,
                       verbose: bool=True, use_clusters_bal: bool=True, sim_metric: str='l2', keep_hard: bool=True,
-                      use_supervised_prototypes: bool=False, Kmeans_with_cos_dist: bool=False, kmeans_obj_file="", logger: logging.Logger=None) -> list:
+                      use_supervised_prototypes: bool=False, Kmeans_with_cos_dist: bool=False, kmeans_obj_file="") -> list:
     '''
     Runs Kmeans clustering using "faiss", and ranks each cluster/class items using the 
     distance to the cluster centorid.
@@ -39,7 +42,7 @@ def kmeans_clustering(data: np.ndarray, paths_list: np.ndarray , ncentroids: int
     if not os.path.exists(kmeans_obj_file):
         ## -- data shoud be normalized
         d = data.shape[1]
-        device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
         logger.info(f'clustering on {device} ....')
         
         spherical = True  # spherical=True when Kmeans_with_cos_dist is True
@@ -109,3 +112,15 @@ def rank_within_cluster_df(data, df, centroids: np.ndarray, sim_metric: str, kee
     
     return sorted_clusters
 
+
+file = "/tmp/EMB_ARRAY.npy"
+file = "/tmp/VAL_ARRAY.npy"
+dim = 768
+n_samples = 210607728
+n_samples = 214670
+
+emb_array = np.memmap(file, dtype='float32', mode="r", shape=(n_samples, dim))
+
+# Should be able to pass sample IDs as text file
+sample_ids = np.arange(n_samples)
+kmeans_clustering(emb_array, sample_ids, ncentroids=50)
