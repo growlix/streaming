@@ -1,4 +1,5 @@
 import argparse
+import os
 import faiss
 import torch
 import time
@@ -18,9 +19,10 @@ logger.setLevel(logging.INFO)
 def kmeans_clustering(
     data: np.ndarray,
     sample_paths: np.ndarray,
-    filename_base=str,
+    filename_base: str,
+    save_directory: str="centroids",
     ncentroids: int=1000,
-    niter: int=100,
+    niter: int=50,
     seed: int=1234,
     verbose: bool=True,
     ) -> np.ndarray:
@@ -46,7 +48,7 @@ def kmeans_clustering(
     logger.info(f'clustering on {device} ....')
     
     spherical = True  # spherical=True when Kmeans_with_cos_dist is True
-    kmeans = faiss.Kmeans(d, ncentroids, niter=niter, verbose=verbose, seed=seed, spherical= spherical, gpu=True) # faiss.Kmeans "gpu" argument: bool or int, optional. False: don't use GPU, True: use all GPUs, number: use this many GPUs.
+    kmeans = faiss.Kmeans(d, ncentroids, niter=niter, verbose=verbose, seed=seed, spherical= spherical, gpu=True, max_points_per_centroid=750) # faiss.Kmeans "gpu" argument: bool or int, optional. False: don't use GPU, True: use all GPUs, number: use this many GPUs.
     st = time.time()
     kmeans.train(data)
     logger.info(f'time for clustering (mins): {(time.time()-st)/(60)}')
@@ -58,14 +60,17 @@ def kmeans_clustering(
     dist_to_cent, nearest_cent = dist_to_cent.squeeze(1), nearest_cent.squeeze(1)
     logger.info(f"time to find nearest centroids: {(time.time()-st)/60}")
 
+    if not os.path.exists(save_directory):
+        os.mkdir(save_directory)
+
     logger.info('Saving centroid members')
     for centroid_i in tqdm(range(len(kmeans.centroids))):
         centroid_inds = np.where(nearest_cent == centroid_i)[0]
         centroid_paths = sample_paths[centroid_inds]
-        inds_filename = f'{filename_base}_centroid{centroid_i}_indices.npy'
+        inds_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_indices.npy')
         with open(inds_filename, 'wb') as f:
             np.save(f, centroid_inds)
-        paths_filename = f'{filename_base}_centroid{centroid_i}_labels.npy'
+        paths_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_labels.npy')
         with open(paths_filename, 'wb') as f:
             np.save(f, centroid_paths)
 
@@ -119,33 +124,33 @@ def rank_within_cluster_df(data, df, centroids: np.ndarray, sim_metric: str, kee
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description='Load a dataset.')
-    parser.add_argument('--streaming_remote', type=str, default="s3://mosaicml-internal-dataset-the-pile/mds/2/")
-    parser.add_argument('--streaming_local', type=str, default="/tmp/streaming_dataset")
-    parser.add_argument('--save_dir', default="~/data_embeddings", type=str)
-    parser.add_argument('--file_name', default='EMB_MEMORY.npy', type=str)
-    parser.add_argument('--split', default='train', type=str)
-    parser.add_argument('--instruction', default='query: ', type=str)
-    parser.add_argument('--model_name', default='intfloat/e5-base', type=str)
-    parser.add_argument('--tokenizer', default='intfloat/e5-base', type=str)
-    parser.add_argument('--max_seq_length', default=512, type=int, help="Model's maximum accepted sequence length")
-    parser.add_argument('--embedding_dim', default=768, type=int)
-    parser.add_argument('--batch_size_dataloader', default=320, type=int)
-    parser.add_argument('--batch_size_inference', default=640, type=int)
-    parser.add_argument('--world_size', default=torch.cuda.device_count(), type=int)
-    parser.add_argument('--post_processing_fxn', default='post_processing_bert', type=str)
-    parser.add_argument('--collator', default='e5', type=str)
-    parser.add_argument('--parallel_strategy', default='dp', type=str, help="mp (multiprocessing) or dp (Data Parallel)")
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser(description='Load a dataset.')
+    # parser.add_argument('--streaming_remote', type=str, default="s3://mosaicml-internal-dataset-the-pile/mds/2/")
+    # parser.add_argument('--streaming_local', type=str, default="/tmp/streaming_dataset")
+    # parser.add_argument('--save_dir', default="~/data_embeddings", type=str)
+    # parser.add_argument('--file_name', default='EMB_MEMORY.npy', type=str)
+    # parser.add_argument('--split', default='train', type=str)
+    # parser.add_argument('--instruction', default='query: ', type=str)
+    # parser.add_argument('--model_name', default='intfloat/e5-base', type=str)
+    # parser.add_argument('--tokenizer', default='intfloat/e5-base', type=str)
+    # parser.add_argument('--max_seq_length', default=512, type=int, help="Model's maximum accepted sequence length")
+    # parser.add_argument('--embedding_dim', default=768, type=int)
+    # parser.add_argument('--batch_size_dataloader', default=320, type=int)
+    # parser.add_argument('--batch_size_inference', default=640, type=int)
+    # parser.add_argument('--world_size', default=torch.cuda.device_count(), type=int)
+    # parser.add_argument('--post_processing_fxn', default='post_processing_bert', type=str)
+    # parser.add_argument('--collator', default='e5', type=str)
+    # parser.add_argument('--parallel_strategy', default='dp', type=str, help="mp (multiprocessing) or dp (Data Parallel)")
+    # args = parser.parse_args()
 
     file = "/tmp/EMB_ARRAY.npy"
-    file = "/tmp/VAL_ARRAY.npy"
+    # file = "/tmp/VAL_ARRAY.npy"
     dim = 768
     n_samples = 210607728
-    n_samples = 214670
+    # n_samples = 214670
 
     emb_array = np.memmap(file, dtype='float32', mode="r", shape=(n_samples, dim))
 
     # Should be able to pass sample IDs as text file
     sample_ids = np.arange(n_samples)
-    sorted_clusters = kmeans_clustering(emb_array, sample_ids, filename_base='brap', ncentroids=50)
+    sorted_clusters = kmeans_clustering(emb_array, sample_ids, filename_base='centroids', save_directory='/tmp/centroids', ncentroids=50000, niter=30)
