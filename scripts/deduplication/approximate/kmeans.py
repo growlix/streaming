@@ -48,7 +48,7 @@ def kmeans_clustering(
     logger.info(f'clustering on {device} ....')
     
     spherical = True  # spherical=True when Kmeans_with_cos_dist is True
-    kmeans = faiss.Kmeans(d, ncentroids, niter=niter, verbose=verbose, seed=seed, spherical= spherical, gpu=True, max_points_per_centroid=750) # faiss.Kmeans "gpu" argument: bool or int, optional. False: don't use GPU, True: use all GPUs, number: use this many GPUs.
+    kmeans = faiss.Kmeans(d, ncentroids, niter=niter, verbose=verbose, seed=seed, spherical= spherical, gpu=True, max_points_per_centroid=256) # faiss.Kmeans "gpu" argument: bool or int, optional. False: don't use GPU, True: use all GPUs, number: use this many GPUs.
     st = time.time()
     kmeans.train(data)
     logger.info(f'time for clustering (mins): {(time.time()-st)/(60)}')
@@ -153,4 +153,4 @@ if __name__ == "__main__":
 
     # Should be able to pass sample IDs as text file
     sample_ids = np.arange(n_samples)
-    sorted_clusters = kmeans_clustering(emb_array, sample_ids, filename_base='centroids', save_directory='/tmp/centroids', ncentroids=50000, niter=30)
+    sorted_clusters = kmeans_clustering(emb_array, sample_ids, filename_base='pile_train', save_directory='/tmp/centroids/pile/train', ncentroids=50000, niter=30)
