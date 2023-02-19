@@ -77,6 +77,7 @@ def kmeans_clustering(
         savename = os.path.join(save_directory, f'{filename_base}_clusters.pkl')
         with open(savename, 'wb') as handle:
             pickle.dump(centroid_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        logger.info(f'Saved clustering data to {savename}')
         # with open()
         # inds_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_indices.npy')
         # with open(inds_filename, 'wb') as f:
