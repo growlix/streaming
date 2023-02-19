@@ -20,14 +20,15 @@ def kmeans_clustering(
     data: np.ndarray,
     sample_paths: np.ndarray,
     filename_base: str,
-    save_directory: str="centroids",
+    save_directory: str='centroids',
     ncentroids: int=1000,
     niter: int=50,
     seed: int=1234,
     verbose: bool=True,
+    max_points_per_centroid: int=256
     ) -> np.ndarray:
-    '''
-    Runs Kmeans clustering using "faiss", and ranks each cluster/class items using the 
+    """
+    Runs Kmeans clustering using 'faiss', and ranks each cluster/class items using the 
     distance to the cluster centorid.
     args:
         data (np.ndarray): Embeddings. Numpy array of shape [dataset_size x
@@ -35,20 +36,24 @@ def kmeans_clustering(
         sample_paths (np.ndarray): Mapping from sample index to path. sample_paths[i] is
             the path to (or label for) the ith sample.
         filename_base (str): 
-        ncentroids: number of centroids.
-        niter: Kmeans clustering iterations.
+        save_directory (str): directory into which centroid data should be saved
+        ncentroids (int): number of centroids.
+        niter (int): Kmeans clustering iterations.
+        seed (int): Random seed
+        max_points_per_centroid (int): Will not use more than this many data points per
+            centroid when fitting.
 
     returns:
         nearest_cent: ndarray in which nearest_cent[i] corresponds to the cluster for the
             ith sample.
-    '''
+    """
     # Step 1) Compute Kmeans centroids
     d = data.shape[1]
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     logger.info(f'clustering on {device} ....')
     
     spherical = True  # spherical=True when Kmeans_with_cos_dist is True
-    kmeans = faiss.Kmeans(d, ncentroids, niter=niter, verbose=verbose, seed=seed, spherical= spherical, gpu=True, max_points_per_centroid=256) # faiss.Kmeans "gpu" argument: bool or int, optional. False: don't use GPU, True: use all GPUs, number: use this many GPUs.
+    kmeans = faiss.Kmeans(d, ncentroids, niter=niter, verbose=verbose, seed=seed, spherical= spherical, gpu=True, max_points_per_centroid=max_points_per_centroid) # faiss.Kmeans 'gpu' argument: bool or int, optional. False: don't use GPU, True: use all GPUs, number: use this many GPUs.
     st = time.time()
     kmeans.train(data)
     logger.info(f'time for clustering (mins): {(time.time()-st)/(60)}')
@@ -58,28 +63,34 @@ def kmeans_clustering(
     st = time.time()
     dist_to_cent, nearest_cent = kmeans.index.search(data, 1) # nearest_cent: the nearest centroid for each example in data. dist_to_cent: contains the squared L2 distances.
     dist_to_cent, nearest_cent = dist_to_cent.squeeze(1), nearest_cent.squeeze(1)
-    logger.info(f"time to find nearest centroids: {(time.time()-st)/60}")
+    logger.info(f'time to find nearest centroids: {(time.time()-st)/60}')
 
     if not os.path.exists(save_directory):
-        os.mkdir(save_directory)
+        os.makedirs(save_directory)
 
     logger.info('Saving centroid members')
+    centroid_data = []
     for centroid_i in tqdm(range(len(kmeans.centroids))):
         centroid_inds = np.where(nearest_cent == centroid_i)[0]
         centroid_paths = sample_paths[centroid_inds]
-        inds_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_indices.npy')
-        with open(inds_filename, 'wb') as f:
-            np.save(f, centroid_inds)
-        paths_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_labels.npy')
-        with open(paths_filename, 'wb') as f:
-            np.save(f, centroid_paths)
+        centroid_data.append({"inds": centroid_inds, "labels": centroid_paths})
+        savename = os.path.join(save_directory, f'{filename_base}_clusters.pkl')
+        with open(savename, 'wb') as handle:
+            pickle.dump(centroid_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        # with open()
+        # inds_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_indices.npy')
+        # with open(inds_filename, 'wb') as f:
+        #     np.save(f, centroid_inds)
+        # paths_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_labels.npy')
+        # with open(paths_filename, 'wb') as f:
+        #     np.save(f, centroid_paths)
 
     return nearest_cent
     # # Step 3) sort each class/cluster
     # logger.info('Ranking...')
     # st = time.time()
     # if use_clusters_bal: # for cluster balancing
-    #     assert use_supervised_prototypes is False, "use_clusters_bal requires use_supervised_prototypes=False"
+    #     assert use_supervised_prototypes is False, 'use_clusters_bal requires use_supervised_prototypes=False'
     #     df = pd.DataFrame({'paths_list': sample_paths, 'nearest_cent':nearest_cent, 'dist_to_cent':dist_to_cent})
     #     sorted_clusters = rank_within_cluster_df(data, df, kmeans.centroids, sim_metric, keep_hard, spherical)
     #     # sorted_clusters = rank_within_cluster(data, paths_list, kmeans.centroids, nearest_cent, dist_to_cent, sim_metric, keep_hard, spherical)
@@ -92,7 +103,7 @@ def rank_within_cluster_df(data, df, centroids: np.ndarray, sim_metric: str, kee
     Sorts each cluster items by the distance to the cluster centroid
     """
 
-    assert sim_metric in ['cosine', 'l2'], "sim_metric should be one of ['cosine', 'l2']"
+    assert sim_metric in ['cosine', 'l2'], 'sim_metric should be one of ["cosine", "l2"]'
 
     sorted_clusters = []
     for cluster_c in tqdm(range(len(centroids))): 
@@ -122,35 +133,24 @@ def rank_within_cluster_df(data, df, centroids: np.ndarray, sim_metric: str, kee
     return sorted_clusters
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
 
-    # parser = argparse.ArgumentParser(description='Load a dataset.')
-    # parser.add_argument('--streaming_remote', type=str, default="s3://mosaicml-internal-dataset-the-pile/mds/2/")
-    # parser.add_argument('--streaming_local', type=str, default="/tmp/streaming_dataset")
-    # parser.add_argument('--save_dir', default="~/data_embeddings", type=str)
-    # parser.add_argument('--file_name', default='EMB_MEMORY.npy', type=str)
-    # parser.add_argument('--split', default='train', type=str)
-    # parser.add_argument('--instruction', default='query: ', type=str)
-    # parser.add_argument('--model_name', default='intfloat/e5-base', type=str)
-    # parser.add_argument('--tokenizer', default='intfloat/e5-base', type=str)
-    # parser.add_argument('--max_seq_length', default=512, type=int, help="Model's maximum accepted sequence length")
-    # parser.add_argument('--embedding_dim', default=768, type=int)
-    # parser.add_argument('--batch_size_dataloader', default=320, type=int)
-    # parser.add_argument('--batch_size_inference', default=640, type=int)
-    # parser.add_argument('--world_size', default=torch.cuda.device_count(), type=int)
-    # parser.add_argument('--post_processing_fxn', default='post_processing_bert', type=str)
-    # parser.add_argument('--collator', default='e5', type=str)
-    # parser.add_argument('--parallel_strategy', default='dp', type=str, help="mp (multiprocessing) or dp (Data Parallel)")
-    # args = parser.parse_args()
+    parser = argparse.ArgumentParser(description='k-means on embeddings')
+    parser.add_argument('--data_path', type=str, help='Path to n x d numpy memmap where n = n samples and d = dimensionality')
+    parser.add_argument('--n_samples', type=int, help='Number of samples in embedding array')
+    parser.add_argument('--sample_ids', type=str, default='index', help='Path to file containing index:label mapping, or "index" to just use index in embedding array')
+    parser.add_argument('--dim', type=int, help='Embedding dimensionality')
+    parser.add_argument('--save_directory', type=str, default='/tmp/centroids/')
+    parser.add_argument('--filename_base', type=str, default='')
+    parser.add_argument('--n_centroids', type=int, default=50000)
+    parser.add_argument('--n_iter', type=int, default=40, help='Number of kmeans iterations')
+    parser.add_argument('--max_points_per_centroid', type=int, default=256, help='Will not use more than this many data points per centroid when fitting.')
+    args = parser.parse_args()
 
-    file = "/tmp/EMB_ARRAY.npy"
-    # file = "/tmp/VAL_ARRAY.npy"
-    dim = 768
-    n_samples = 210607728
-    # n_samples = 214670
+    emb_array = np.memmap(args.data_path, dtype='float32', mode='r', shape=(args.n_samples, args.dim))
 
-    emb_array = np.memmap(file, dtype='float32', mode="r", shape=(n_samples, dim))
-
-    # Should be able to pass sample IDs as text file
-    sample_ids = np.arange(n_samples)
-    sorted_clusters = kmeans_clustering(emb_array, sample_ids, filename_base='pile_train', save_directory='/tmp/centroids/pile/train', ncentroids=50000, niter=40)
+    sample_ids = np.array([])
+    if args.sample_ids == "index":
+        # TODO: Read sample IDs from file
+        sample_ids = np.arange(args.n_samples)
+    sorted_clusters = kmeans_clustering(emb_array, sample_ids, filename_base=args.filename_base, save_directory=args.save_directory, ncentroids=args.n_centroids, niter=args.n_iter, max_points_per_centroid=args.max_points_per_centroid)
