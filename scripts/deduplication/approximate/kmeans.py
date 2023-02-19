@@ -41,7 +41,7 @@ def kmeans_clustering(
         niter (int): Kmeans clustering iterations.
         seed (int): Random seed
         max_points_per_centroid (int): Will not use more than this many data points per
-            centroid when fitting.
+        centroid when fitting. 
 
     returns:
         nearest_cent: ndarray in which nearest_cent[i] corresponds to the cluster for the
@@ -53,7 +53,7 @@ def kmeans_clustering(
     logger.info(f'clustering on {device} ....')
     
     spherical = True  # spherical=True when Kmeans_with_cos_dist is True
-    kmeans = faiss.Kmeans(d, ncentroids, niter=niter, verbose=verbose, seed=seed, spherical= spherical, gpu=True, max_points_per_centroid=max_points_per_centroid) # faiss.Kmeans 'gpu' argument: bool or int, optional. False: don't use GPU, True: use all GPUs, number: use this many GPUs.
+    kmeans = faiss.Kmeans(d, ncentroids, niter=niter, verbose=verbose, seed=seed, spherical= spherical, gpu=True, max_points_per_centroid=256) # faiss.Kmeans 'gpu' argument: bool or int, optional. False: don't use GPU, True: use all GPUs, number: use this many GPUs.
     st = time.time()
     kmeans.train(data)
     logger.info(f'time for clustering (mins): {(time.time()-st)/(60)}')
@@ -66,24 +66,18 @@ def kmeans_clustering(
     logger.info(f'time to find nearest centroids: {(time.time()-st)/60}')
 
     if not os.path.exists(save_directory):
-        os.makedirs(save_directory)
+        os.mkdir(save_directory)
 
     logger.info('Saving centroid members')
-    centroid_data = []
     for centroid_i in tqdm(range(len(kmeans.centroids))):
         centroid_inds = np.where(nearest_cent == centroid_i)[0]
         centroid_paths = sample_paths[centroid_inds]
-        centroid_data.append({"inds": centroid_inds, "labels": centroid_paths})
-        savename = os.path.join(save_directory, f'{filename_base}_clusters.pkl')
-        with open(savename, 'wb') as handle:
-            pickle.dump(centroid_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        # with open()
-        # inds_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_indices.npy')
-        # with open(inds_filename, 'wb') as f:
-        #     np.save(f, centroid_inds)
-        # paths_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_labels.npy')
-        # with open(paths_filename, 'wb') as f:
-        #     np.save(f, centroid_paths)
+        inds_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_indices.npy')
+        with open(inds_filename, 'wb') as f:
+            np.save(f, centroid_inds)
+        paths_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_labels.npy')
+        with open(paths_filename, 'wb') as f:
+            np.save(f, centroid_paths)
 
     return nearest_cent
     # # Step 3) sort each class/cluster
@@ -149,6 +143,10 @@ if __name__ == '__main__':
 
     emb_array = np.memmap(args.data_path, dtype='float32', mode='r', shape=(args.n_samples, args.dim))
 
+    # n_samples = 210607728
+    # n_samples = 214670
+
+    # TODO: Attempt to infer n_samples from dim if n_samples not provided (and vice versa)
     sample_ids = np.array([])
     if args.sample_ids == "index":
         # TODO: Read sample IDs from file
