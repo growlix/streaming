@@ -147,8 +147,12 @@ if __name__ == '__main__':
     parser.add_argument('--max_points_per_centroid', type=int, default=256, help='Will not use more than this many data points per centroid when fitting.')
     args = parser.parse_args()
 
+    # n_samples = 210607728
+    # n_samples = 214670
+
     emb_array = np.memmap(args.data_path, dtype='float32', mode='r', shape=(args.n_samples, args.dim))
 
+    # TODO: Attempt to infer n_samples from dim if n_samples not provided (and vice versa)
     sample_ids = np.array([])
     if args.sample_ids == "index":
         # TODO: Read sample IDs from file
