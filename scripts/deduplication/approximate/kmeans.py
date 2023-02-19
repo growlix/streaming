@@ -153,4 +153,4 @@ if __name__ == "__main__":
 
     # Should be able to pass sample IDs as text file
     sample_ids = np.arange(n_samples)
-    sorted_clusters = kmeans_clustering(emb_array, sample_ids, filename_base='pile_train', save_directory='/tmp/centroids/pile/train', ncentroids=50000, niter=30)
+    sorted_clusters = kmeans_clustering(emb_array, sample_ids, filename_base='pile_train', save_directory='/tmp/centroids/pile/train', ncentroids=50000, niter=40)
