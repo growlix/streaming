@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 from tqdm import tqdm
 import os
@@ -5,6 +6,8 @@ import torch
 import pickle
 import pandas as pd
 import random
+
+
 
 def _encode_shard(self, shard, sorted_clusters_path):
     def init_memmap_laion440_images_embs():
@@ -124,3 +127,43 @@ def _encode_shard(self, shard, sorted_clusters_path):
 
         print('DONE cluster_id ', cluster_id)
 
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(description='k-means on embeddings')
+    parser.add_argument('--emb_path', type=str, help='Path to embeddings file, a n x d numpy memmap where n = n samples and d = dimensionality')
+    parser.add_argument('--centroid_path', type=str, help='Path to centroids file, the output of kmeans.py')    
+    parser.add_argument('--n_samples', type=int, help='Number of samples in embedding array')
+    parser.add_argument('--dim', type=int, help='Embedding dimensionality')
+    parser.add_argument('--save_directory', type=str, default='/tmp/centroids/')
+    parser.add_argument('--filename_base', type=str, default='')
+    parser.add_argument('--n_iter', type=int, default=40, help='Number of kmeans iterations')
+    args = parser.parse_args()
+
+    # The Pile
+    # train
+    # n_samples = 210607728
+    # val
+    # n_samples = 214670
+
+    # C4
+    # train
+    # n_samples = 364868892
+    # val
+    # n_samples = 364608
+
+    args.emb_path = "/tmp/pile_val_e5base_embeddings.npy"
+    args.centroid_path = "/tmp/pile_val_clusters.pkl"
+    args.n_samples = 214670
+    args.dim = 768
+
+    emb_array = np.memmap(args.emb_path, dtype='float32', mode='r', shape=(args.n_samples, args.dim))
+    with open(args.centroid_path, 'rb') as handle:
+        centroids = pickle.load(handle)
+    
+
+    # TODO: Attempt to infer n_samples from dim if n_samples not provided (and vice versa)
+    sample_ids = np.array([])
+    if args.sample_ids == "index":
+        # TODO: Read sample IDs from file
+        sample_ids = np.arange(args.n_samples)
