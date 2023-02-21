@@ -6,7 +6,8 @@ import torch
 import pickle
 import pandas as pd
 import random
-
+import torch.multiprocessing as mp
+# import plotille
 
 
 def _encode_shard(self, shard, sorted_clusters_path):
@@ -132,7 +133,8 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='k-means on embeddings')
     parser.add_argument('--emb_path', type=str, help='Path to embeddings file, a n x d numpy memmap where n = n samples and d = dimensionality')
-    parser.add_argument('--centroid_path', type=str, help='Path to centroids file, the output of kmeans.py')    
+    parser.add_argument('--centroid_path', type=str, help='Path to centroids file, the output of kmeans.py')
+    parser.add_argument('--sample_ids', type=str, default='index', help='Path to file containing index:label mapping, or "index" to just use index in embedding array')
     parser.add_argument('--n_samples', type=int, help='Number of samples in embedding array')
     parser.add_argument('--dim', type=int, help='Embedding dimensionality')
     parser.add_argument('--save_directory', type=str, default='/tmp/centroids/')
@@ -152,9 +154,9 @@ if __name__ == '__main__':
     # val
     # n_samples = 364608
 
-    args.emb_path = "/tmp/pile_val_e5base_embeddings.npy"
-    args.centroid_path = "/tmp/pile_val_clusters.pkl"
-    args.n_samples = 214670
+    args.emb_path = "/tmp/pile_train_embeddings.npy"
+    args.centroid_path = "/tmp/pile_train_clusters.pkl"
+    args.n_samples = 210607728
     args.dim = 768
 
     emb_array = np.memmap(args.emb_path, dtype='float32', mode='r', shape=(args.n_samples, args.dim))
@@ -167,3 +169,29 @@ if __name__ == '__main__':
     if args.sample_ids == "index":
         # TODO: Read sample IDs from file
         sample_ids = np.arange(args.n_samples)
+    
+    clusters_to_sample = 500
+    quantiles = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+
+    # Parallelize
+    sampled_distances = []
+    for cluster_i in tqdm(range(clusters_to_sample)):
+        centroid_inds = centroids[cluster_i]['inds']
+        centroid_labels = centroids[cluster_i]['labels']
+        centroid_embeddings = torch.tensor(emb_array[centroid_inds,:])
+        centroid_size = centroid_embeddings.shape[0]
+        if centroid_size > 2:
+            similarity_matrix = (centroid_embeddings @ (centroid_embeddings.T))
+            similarity_matrix.fill_diagonal_(0.0)
+            assert similarity_matrix.shape[0]==similarity_matrix.shape[1]        
+            # triu = torch.triu(similarity_matrix, diagonal=1)
+            triu_idx = torch.triu_indices(*similarity_matrix.shape, offset=1)
+            similarity_vector = similarity_matrix[triu_idx[0], triu_idx[1]]
+            sampled_distances.append(similarity_vector.numpy())
+    
+    sampled_distances = np.concatenate(sampled_distances, axis=0)
+    distance_quantiles = np.quantile(sampled_distances, quantiles)
+    pass
+        # mean_similarity = torch.sum(similarity_matrix, dim=0)/(centroid_size-1)
+
+        

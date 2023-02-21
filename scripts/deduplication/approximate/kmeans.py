@@ -70,6 +70,7 @@ def kmeans_clustering(
 
     logger.info('Saving centroid members')
     centroid_data = []
+    # Parallelize
     for centroid_i in tqdm(range(len(kmeans.centroids))):
         centroid_inds = np.where(nearest_cent == centroid_i)[0]
         centroid_paths = sample_paths[centroid_inds]
