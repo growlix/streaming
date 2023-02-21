@@ -173,7 +173,7 @@ if __name__ == '__main__':
     clusters_to_sample = 500
     quantiles = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
-    # Parallelize
+    # TODO: Parallelize
     sampled_distances = []
     for cluster_i in tqdm(range(clusters_to_sample)):
         centroid_inds = centroids[cluster_i]['inds']
@@ -184,9 +184,11 @@ if __name__ == '__main__':
             similarity_matrix = (centroid_embeddings @ (centroid_embeddings.T))
             similarity_matrix.fill_diagonal_(0.0)
             assert similarity_matrix.shape[0]==similarity_matrix.shape[1]        
-            # triu = torch.triu(similarity_matrix, diagonal=1)
-            triu_idx = torch.triu_indices(*similarity_matrix.shape, offset=1)
-            similarity_vector = similarity_matrix[triu_idx[0], triu_idx[1]]
+            triu = torch.triu(similarity_matrix, diagonal=1)
+            # TODO: Choose between mean or max
+            similarity_vector = triu[:,1:].max(dim=0)[0]
+            # triu_idx = torch.triu_indices(*similarity_matrix.shape, offset=1)
+            # similarity_vector = similarity_matrix[triu_idx[0], triu_idx[1]]
             sampled_distances.append(similarity_vector.numpy())
     
     sampled_distances = np.concatenate(sampled_distances, axis=0)
