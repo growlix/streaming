@@ -7,6 +7,8 @@ import pickle
 import pandas as pd
 import random
 import torch.multiprocessing as mp
+from functools import partial
+from typing import Mapping
 # import plotille
 
 
@@ -129,6 +131,42 @@ def _encode_shard(self, shard, sorted_clusters_path):
         print('DONE cluster_id ', cluster_id)
 
 
+# def init_worker(emb_path: str):
+#     global embedding_path
+#     embedding_path = emb_path
+
+
+def compute_similarities(
+    centroid_data: Mapping,
+    embedding_path: str,
+    n_samples: int,
+    dim: int,
+    reduction: str="max"
+    ):
+    embeddings = np.memmap(embedding_path, dtype='float32', mode='r', shape=(n_samples, dim))
+    # print('embeddings loaded')
+    centroid_inds = centroid_data['inds']
+    # print('centroid inds')
+    # centroid_labels = centroid_data['labels']
+    centroid_embeddings = torch.tensor(embeddings[centroid_inds,:])
+    # print('centroid embeddings')
+    centroid_size = centroid_embeddings.shape[0]
+    similarity_vector = torch.tensor([])
+    if centroid_size > 2:
+        similarity_matrix = (centroid_embeddings @ (centroid_embeddings.T))
+        # print('sim matrix')
+        similarity_matrix.fill_diagonal_(0.0)
+        assert similarity_matrix.shape[0]==similarity_matrix.shape[1]        
+        triu = torch.triu(similarity_matrix, diagonal=1)
+        # print('triu')
+        # TODO: Choose between mean or max
+        similarity_vector = triu[:,1:].max(dim=0)[0]
+        # print('max')
+        # triu_idx = torch.triu_indices(*similarity_matrix.shape, offset=1)
+        # similarity_vector = similarity_matrix[triu_idx[0], triu_idx[1]]
+    return similarity_vector.numpy()
+
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='k-means on embeddings')
@@ -159,7 +197,7 @@ if __name__ == '__main__':
     args.n_samples = 210607728
     args.dim = 768
 
-    emb_array = np.memmap(args.emb_path, dtype='float32', mode='r', shape=(args.n_samples, args.dim))
+    # emb_array = np.memmap(args.emb_path, dtype='float32', mode='r', shape=(args.n_samples, args.dim))
     with open(args.centroid_path, 'rb') as handle:
         centroids = pickle.load(handle)
     
@@ -175,21 +213,25 @@ if __name__ == '__main__':
 
     # TODO: Parallelize
     sampled_distances = []
-    for cluster_i in tqdm(range(clusters_to_sample)):
-        centroid_inds = centroids[cluster_i]['inds']
-        centroid_labels = centroids[cluster_i]['labels']
-        centroid_embeddings = torch.tensor(emb_array[centroid_inds,:])
-        centroid_size = centroid_embeddings.shape[0]
-        if centroid_size > 2:
-            similarity_matrix = (centroid_embeddings @ (centroid_embeddings.T))
-            similarity_matrix.fill_diagonal_(0.0)
-            assert similarity_matrix.shape[0]==similarity_matrix.shape[1]        
-            triu = torch.triu(similarity_matrix, diagonal=1)
-            # TODO: Choose between mean or max
-            similarity_vector = triu[:,1:].max(dim=0)[0]
-            # triu_idx = torch.triu_indices(*similarity_matrix.shape, offset=1)
-            # similarity_vector = similarity_matrix[triu_idx[0], triu_idx[1]]
-            sampled_distances.append(similarity_vector.numpy())
+    mapfun = partial(compute_similarities, embedding_path=args.emb_path, n_samples=args.n_samples, dim= args.dim)
+    with mp.Pool() as pool:
+        for similarity_vector in tqdm(pool.imap_unordered(mapfun, centroids[:clusters_to_sample]), total=clusters_to_sample):
+            sampled_distances.append(similarity_vector)
+        # for cluster_i in tqdm(range(clusters_to_sample)):
+        #     centroid_inds = centroids[cluster_i]['inds']
+        #     centroid_labels = centroids[cluster_i]['labels']
+        #     centroid_embeddings = torch.tensor(emb_array[centroid_inds,:])
+        #     centroid_size = centroid_embeddings.shape[0]
+        #     if centroid_size > 2:
+        #         similarity_matrix = (centroid_embeddings @ (centroid_embeddings.T))
+        #         similarity_matrix.fill_diagonal_(0.0)
+        #         assert similarity_matrix.shape[0]==similarity_matrix.shape[1]        
+        #         triu = torch.triu(similarity_matrix, diagonal=1)
+        #         # TODO: Choose between mean or max
+        #         similarity_vector = triu[:,1:].max(dim=0)[0]
+        #         # triu_idx = torch.triu_indices(*similarity_matrix.shape, offset=1)
+        #         # similarity_vector = similarity_matrix[triu_idx[0], triu_idx[1]]
+        #         sampled_distances.append(similarity_vector.numpy())
     
     sampled_distances = np.concatenate(sampled_distances, axis=0)
     distance_quantiles = np.quantile(sampled_distances, quantiles)
