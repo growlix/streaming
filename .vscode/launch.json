@@ -25,6 +25,31 @@
             ]
         },
         {
+            "name": "write_approx_deduplicate_data",
+            "type": "python",
+            "request": "launch",
+            "program": "scripts/deduplication/approximate/write_and_prune_dataset.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "host": "127.0.0.1",
+            "args": [
+                "--streaming_remote",
+                "s3://mosaicml-internal-dataset-the-pile/mds/2/",
+                "--streaming_local",
+                "/nfs/streaming_datasets/pile/",
+                "--split",
+                "train",
+                "--name",
+                "pile",
+                "--save_dir",
+                "/nfs/pruned_datasets/pile/",
+                "--similarity_file",
+                "/nfs/similarities/pile_train_max_similarity.pkl",
+                "--keep_fraction",
+                ".8"
+            ]
+        },        
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
