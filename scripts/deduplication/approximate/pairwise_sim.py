@@ -21,7 +21,7 @@ def compute_similarities(
     centroid_embeddings = torch.tensor(embeddings[centroid_inds,:])
     centroid_size = centroid_embeddings.shape[0]
     similarity_vector = torch.tensor([])
-    if centroid_size > 2:
+    if centroid_size > 1:
         similarity_matrix = (centroid_embeddings @ (centroid_embeddings.T))
         similarity_matrix.fill_diagonal_(0.0)
         assert similarity_matrix.shape[0]==similarity_matrix.shape[1]        
@@ -91,6 +91,8 @@ if __name__ == '__main__':
             # TODO: Check for collisions
             for label, similarity in zip(cluster_labels, cluster_similarity):
                 similarities_map[label] = similarity
+            if cluster_similarity.size == 0:
+                print('Clu')
     
     all_similarities = np.concatenate(all_similarities, axis=0)
     similarity_quantiles = np.quantile(all_similarities, quantiles)
