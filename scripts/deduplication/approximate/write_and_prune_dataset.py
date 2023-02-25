@@ -1,4 +1,5 @@
 import argparse
+import os
 import pickle
 
 import numpy as np
@@ -20,6 +21,14 @@ def write_and_prune(
     with open(similarity_file, 'rb') as handle:
         similarities = pickle.load(handle)
 
+    try:
+        keep_threshold = similarities['quantiles'][keep_fraction]
+    except KeyError as e:
+        print(f'{keep_fraction} quantile not present in {similarity_file}. Please use one of:\n')
+        for q in similarities['quantiles'].keys():
+            print(q)
+        return e
+
     # Instantiate old dataset
     old_dataset = StreamingDataset(
         local=streaming_local,
@@ -34,17 +43,14 @@ def write_and_prune(
     hashes = old_dataset.shards[0].hashes
     size_limit = old_dataset.shards[0].size_limit
 
+    # TODO: Use UIDs instead of index
     # Write deduplicated samples
-    with MDSWriter( dirname=save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
-        for i, sample in tqdm(enumerate(old_dataset)):
-            if i in remove_ex.keys():
-                text = sample['text']
-                for start,end in remove_ex[i][::-1]:
-                    text = text[:start] + text[end:]
-                sample['text'] = text
-            out.write(sample)
+    with MDSWriter(dirname=save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
+        for i, sample in tqdm(enumerate(old_dataset), total=len(old_dataset)):
+            if similarities['similarities'].get(i, 0) < keep_threshold:
+                out.write(sample)
 
-if __name__ == 'main':
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Write and prune dataset')
     parser.add_argument('--streaming_remote', type=str, default="None")
     parser.add_argument('--streaming_local', type=str, default="/tmp/streaming_dataset")
@@ -55,6 +61,5 @@ if __name__ == 'main':
     parser.add_argument('--keep_fraction', type=float)
     args = parser.parse_args()
 
-    print("brap")
-
+    args.save_dir = os.path.join(args.save_dir, args.split)
     write_and_prune(**vars(args))

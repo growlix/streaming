@@ -42,7 +42,7 @@
                 "--name",
                 "pile",
                 "--save_dir",
-                "/nfs/pruned_datasets/pile/",
+                "/nfs/pruned_datasets/pile/keep_0pt8",
                 "--similarity_file",
                 "/nfs/similarities/pile_train_max_similarity.pkl",
                 "--keep_fraction",
