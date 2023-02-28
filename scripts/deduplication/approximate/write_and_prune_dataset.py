@@ -72,7 +72,7 @@ def write_and_prune(
             else:
                 removed += 1
             if i%2000000 == 0:
-                print(f'\nRemoved {removed} of {i} samples {removed/i:.4f}')
+                print(f'\nRemoved {removed} of {i+1} samples {removed/(i+1):.4f}')
     print(f'\nRemoved {removed} of {len(old_dataset)} samples  {removed/len(old_dataset):.4f}')
 
     savename = os.path.join(save_dir, 'data_stats.pkl')
