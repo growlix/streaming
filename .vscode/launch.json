@@ -42,11 +42,36 @@
                 "--name",
                 "pile",
                 "--save_dir",
-                "/nfs/pruned_datasets/pile/keep_0pt8",
+                "/nfs/pruned_datasets/pile/keep_0pt4",
                 "--similarity_file",
                 "/nfs/similarities/pile_train_max_similarity.pkl",
                 "--keep_fraction",
-                ".8"
+                ".4"
+            ]
+        },        
+        {
+            "name": "write_approx_deduplicate_c4",
+            "type": "python",
+            "request": "launch",
+            "program": "scripts/deduplication/approximate/write_and_prune_dataset.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "host": "127.0.0.1",
+            "args": [
+                "--streaming_remote",
+                "s3://mosaicml-internal-dataset-c4/mds/2/",
+                "--streaming_local",
+                "/nfs/streaming_datasets/c4/",
+                "--split",
+                "train",
+                "--name",
+                "c4",
+                "--save_dir",
+                "/nfs/pruned_datasets/c4/keep_0pt7",
+                "--similarity_file",
+                "/nfs/similarities/c4_train_max_similarity.pkl",
+                "--keep_fraction",
+                ".7"
             ]
         },        
         {
