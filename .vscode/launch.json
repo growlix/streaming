@@ -13,6 +13,26 @@
             "justMyCode": true,
         },        
         {
+            "name": "subset",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--streaming_remote",
+                "s3://mosaicml-internal-dataset-the-pile/mds/2/",
+                "--streaming_local",
+                "/nfs/streaming_datasets/pile/",
+                "--split",
+                "train",
+                "--save_dir",
+                "/nfs/subsets/pile/github",
+                "--subsets",
+                "github"
+            ]
+        },
+        {
             "name": "make_suffix_array",
             "type": "python",
             "request": "launch",

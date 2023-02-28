@@ -46,7 +46,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     subsets = []
-    for subset in args.subset:
+    for subset in args.subsets:
         try:    
             subsets.append(SUBSET_MAP[subset.lower()])
         except KeyError:
