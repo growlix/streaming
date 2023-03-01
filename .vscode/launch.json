@@ -81,17 +81,17 @@
                 "--streaming_remote",
                 "s3://mosaicml-internal-dataset-c4/mds/2/",
                 "--streaming_local",
-                "/nfs/streaming_datasets/c4/",
+                "/tmp/streaming_datasets/c4/",
                 "--split",
                 "train",
                 "--name",
                 "c4",
                 "--save_dir",
-                "/nfs/pruned_datasets/c4/keep_0pt7",
+                "/tmp/pruned_datasets/c4/keep_0pt2",
                 "--similarity_file",
-                "/nfs/similarities/c4_train_max_similarity.pkl",
+                "/tmp/similarities/c4_train_max_similarity.pkl",
                 "--keep_fraction",
-                ".7"
+                ".2"
             ]
         },        
         {
