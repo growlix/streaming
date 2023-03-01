@@ -2,37 +2,44 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import shutil
+from typing import Tuple
+
+import pytest
 
 from streaming import MDSWriter, StreamingDataset
 
 
-def test_laziness():
+@pytest.mark.usefixtures('local_remote_dir')
+def test_laziness(local_remote_dir: Tuple[str, str]):
     num_samples = 100_000
-    local = 'my-local'
-    remote = 'my-remote'
+    local, remote = local_remote_dir
     columns = {'value': 'int'}
     compression = None
     hashes = None
     size_limit = 10_000
 
-    with MDSWriter(remote, columns, compression, hashes, size_limit) as out:
+    with MDSWriter(out=remote,
+                   columns=columns,
+                   compression=compression,
+                   hashes=hashes,
+                   size_limit=size_limit) as out:
         for i in range(num_samples):
             sample = {'value': i}
             out.write(sample)
 
     # Verify __getitem__ accesses.
-    dataset = StreamingDataset(remote)
+    dataset = StreamingDataset(local=remote)
     for i in range(num_samples):
         sample = dataset[i]
         assert sample['value'] == i
 
     # Verify __iter__ -> __getitem__ accesses.
-    dataset = StreamingDataset(remote)
+    dataset = StreamingDataset(local=remote)
     for i, sample in zip(range(num_samples), dataset):
         assert sample['value'] == i
 
     # Verify __getitem__ downloads/accesses.
-    dataset = StreamingDataset(local, remote)
+    dataset = StreamingDataset(local=local, remote=remote)
     for i in range(num_samples):
         sample = dataset[i]
         assert sample['value'] == i
@@ -40,15 +47,12 @@ def test_laziness():
     shutil.rmtree(local)
 
     # Verify __iter__ -> __getitem__ downloads/accesses.
-    dataset = StreamingDataset(local, remote)
+    dataset = StreamingDataset(local=local, remote=remote)
     for i, sample in zip(range(num_samples), dataset):
         assert sample['value'] == i
 
     # Re-verify __getitem__ downloads/accesses.
-    dataset = StreamingDataset(local, remote)
+    dataset = StreamingDataset(local=local, remote=remote)
     for i in range(num_samples):
         sample = dataset[i]
         assert sample['value'] == i
-
-    shutil.rmtree(remote)
-    shutil.rmtree(local)
