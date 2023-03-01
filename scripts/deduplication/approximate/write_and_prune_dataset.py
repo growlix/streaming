@@ -56,8 +56,10 @@ def write_and_prune(
         'n_samples': 0,
         'mean_length': 0,
     }
+    n_iterated = 0
     with MDSWriter(dirname=save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
         for i, sample in tqdm(enumerate(old_dataset), total=len(old_dataset)):
+            n_iterated += 1
             if similarities['similarities'].get(i, 0) < keep_threshold:
                 out.write(sample)
                 data_stats['n_samples'] += 1
@@ -73,7 +75,7 @@ def write_and_prune(
                 removed += 1
             if i%2000000 == 0:
                 print(f'\nRemoved {removed} of {i+1} samples {removed/(i+1):.4f}')
-    print(f'\nRemoved {removed} of {len(old_dataset)} samples  {removed/len(old_dataset):.4f}')
+    print(f'\nRemoved {removed} of {n_iterated} samples  {removed/(n_iterated):.4f}')
 
     savename = os.path.join(save_dir, 'data_stats.pkl')
     with open(savename, 'wb') as handle:
