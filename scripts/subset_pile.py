@@ -73,8 +73,3 @@ if __name__ == '__main__':
         for sample in tqdm(full_dataset, total=len(full_dataset)):
             if sample['pile_set_name'] in subsets:
                 out.write(sample)
-
-    # savename = os.path.join(args.save_dir, 'data_stats.pkl')
-    # with open(savename, 'wb') as handle:
-    #     pickle.dump(data_stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    # print(f'\nSaved data stats to {savename}')    
