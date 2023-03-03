@@ -76,7 +76,6 @@ if __name__ == '__main__':
     size_limit = full_dataset.shards[0].size_limit
 
     with MDSWriter(dirname=args.save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
-<<<<<<< HEAD
         for batch in tqdm(dataloader):
             for sample, index in batch:
                 if sample['pile_set_name'] in subsets:
@@ -86,8 +85,3 @@ if __name__ == '__main__':
     # with open(savename, 'wb') as handle:
     #     pickle.dump(data_stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
     # print(f'\nSaved data stats to {savename}')    
-=======
-        for sample in tqdm(full_dataset, total=len(full_dataset)):
-            if sample['pile_set_name'] in subsets:
-                out.write(sample)
->>>>>>> 2a3f0685f54fe798ab2f03c132af1340f85621ca
