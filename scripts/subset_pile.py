@@ -2,6 +2,7 @@ import argparse
 import os
 import pickle
 
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from streaming.base import MDSWriter, StreamingDataset
@@ -56,6 +57,9 @@ if __name__ == '__main__':
 
     args.save_dir = os.path.join(args.save_dir, args.split)
     
+    def collate_fn(batch):
+        return batch    
+    
     full_dataset = StreamingDataset(
         local=args.streaming_local,
         remote=args.streaming_remote,
@@ -63,6 +67,8 @@ if __name__ == '__main__':
         shuffle=False
         )
     
+    dataloader = DataLoader(full_dataset, batch_size=64, num_workers=8, collate_fn=collate_fn)    
+
     # Get params for new dataset from old dataset
     columns = {k: v for k, v in zip(full_dataset.shards[0].column_names, full_dataset.shards[0].column_encodings)}
     compression = full_dataset.shards[0].compression
@@ -70,9 +76,10 @@ if __name__ == '__main__':
     size_limit = full_dataset.shards[0].size_limit
 
     with MDSWriter(dirname=args.save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
-        for sample in tqdm(full_dataset, total=len(full_dataset)):
-            if sample['pile_set_name'] in subsets:
-                out.write(sample)
+        for batch in tqdm(dataloader):
+            for sample, index in batch:
+                if sample['pile_set_name'] in subsets:
+                    out.write(sample)
 
     # savename = os.path.join(args.save_dir, 'data_stats.pkl')
     # with open(savename, 'wb') as handle:
