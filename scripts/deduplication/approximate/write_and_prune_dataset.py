@@ -3,9 +3,11 @@ import os
 import pickle
 
 import numpy as np
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from streaming.base import MDSWriter, StreamingDataset
+from get_embeddings import StreamingDatasetIndexed
 
 
 def running_average(avg: float, new_val: float, count: int):
@@ -34,13 +36,18 @@ def write_and_prune(
             print(q)
         return e
 
+    def collate_fn(batch):
+        return batch
+
     # Instantiate old dataset
-    old_dataset = StreamingDataset(
+    old_dataset = StreamingDatasetIndexed(
         local=streaming_local,
         remote=streaming_remote,
         split=split,
         shuffle=False
         )
+
+    dataloader = DataLoader(old_dataset, batch_size=64, num_workers=8, collate_fn=collate_fn)
 
     # Get params for new dataset from old dataset
     columns = {k: v for k, v in zip(old_dataset.shards[0].column_names, old_dataset.shards[0].column_encodings)}
@@ -56,23 +63,27 @@ def write_and_prune(
         'n_samples': 0,
         'mean_length': 0,
     }
+    i = 0
     with MDSWriter(dirname=save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
-        for i, sample in tqdm(enumerate(old_dataset), total=len(old_dataset)):
-            if similarities['similarities'].get(i, 0) < keep_threshold:
-                out.write(sample)
-                data_stats['n_samples'] += 1
-                sample_len = len(sample['text'])
-                data_stats['mean_length'] = running_average(data_stats['mean_length'], sample_len, i+1)
-                if source_key in sample.keys():
-                    source = sample[source_key]
-                    source_stats = data_stats['source'].get(source, {'n_samples': 0, 'mean_length': 0})
-                    source_stats['n_samples'] += 1
-                    source_stats['mean_length'] = running_average(source_stats['mean_length'], sample_len, i+1)
-                    data_stats['source'][source] = source_stats
-            else:
-                removed += 1
-            if i%2000000 == 0:
-                print(f'\nRemoved {removed} of {i+1} samples {removed/(i+1):.4f}')
+        for batch in tqdm(dataloader):
+            for sample, index in batch:
+            # for i, sample in tqdm(enumerate(old_dataset), total=len(old_dataset)):
+                if similarities['similarities'].get(index, 0) < keep_threshold:
+                    out.write(sample)
+                    data_stats['n_samples'] += 1
+                    sample_len = len(sample['text'])
+                    data_stats['mean_length'] = running_average(data_stats['mean_length'], sample_len, i+1)
+                    if source_key in sample.keys():
+                        source = sample[source_key]
+                        source_stats = data_stats['source'].get(source, {'n_samples': 0, 'mean_length': 0})
+                        source_stats['n_samples'] += 1
+                        source_stats['mean_length'] = running_average(source_stats['mean_length'], sample_len, i+1)
+                        data_stats['source'][source] = source_stats
+                else:
+                    removed += 1
+                if i%2000000 == 0:
+                    print(f'\nRemoved {removed} of {i+1} samples {removed/(i+1):.4f}')
+                i += 1
     print(f'\nRemoved {removed} of {len(old_dataset)} samples  {removed/len(old_dataset):.4f}')
 
     savename = os.path.join(save_dir, 'data_stats.pkl')
