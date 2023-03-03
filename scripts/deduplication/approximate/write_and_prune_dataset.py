@@ -64,7 +64,7 @@ def write_and_prune(
         'mean_length': 0,
     }
     i = 0
-    with MDSWriter(dirname=save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
+    with MDSWriter(out=save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
         for batch in tqdm(dataloader):
             for sample, index in batch:
             # for i, sample in tqdm(enumerate(old_dataset), total=len(old_dataset)):

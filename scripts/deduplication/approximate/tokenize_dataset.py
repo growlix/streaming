@@ -45,7 +45,7 @@ if __name__ == "__main__":
     size_limit = old_dataset.shards[0].size_limit
 
     # Write deduplicated samples
-    with MDSWriter( dirname=save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
+    with MDSWriter(out=save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
         for i, sample in tqdm(enumerate(old_dataset)):
             text = sample["text"]
             tokenized = chunk_tokens_bert(text=text, tokenizer=tokenizer, chunk_size=chunk_size, instruction=instruction)
