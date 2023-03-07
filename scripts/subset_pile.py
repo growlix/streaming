@@ -42,19 +42,29 @@ if __name__ == '__main__':
     parser.add_argument('--streaming_remote', type=str, default="None")
     parser.add_argument('--streaming_local', type=str, default="/tmp/streaming_dataset")
     parser.add_argument('--save_dir', type=str)
-    parser.add_argument('--subsets', nargs='+', default=[], help="Subset(s) to collect. Subsets are: f{SUBSET_MAP}")
+    parser.add_argument('--include_list', nargs='+', default=[], help=f"Subset(s) to use. Subsets are: {SUBSET_MAP}")
+    parser.add_argument('--block_list', nargs='+', default=[], help=f"Subset(s) to block. Subsets are : {SUBSET_MAP}")
     parser.add_argument('--split', type=str)
     args = parser.parse_args()
 
+    if args.include_list and args.block_list:
+        raise ValueError('Arguments --include_list and --block_list are mutually exclusive. Please pick one.')
+
+    use_block_list = False
+    passed_subsets = []
+    if args.include_list:
+        passed_subsets = args.include_list
+    elif args.block_list:
+        passed_subsets = args.block_list
     subsets = []
-    for subset in args.subsets:
+    for subset in passed_subsets:
         try:    
             subsets.append(SUBSET_MAP[subset.lower()])
         except KeyError:
             print(f'Subset {subset} not recognized. Please use one or more of the following subsets:')
             for k, v in SUBSET_MAP.items():
                 print(f'\n{k}: {v}')
-
+    
     args.save_dir = os.path.join(args.save_dir, args.split)
     
     def collate_fn(batch):
@@ -65,8 +75,7 @@ if __name__ == '__main__':
         remote=args.streaming_remote,
         split=args.split,
         shuffle=False
-        )
-    
+        )    
     dataloader = DataLoader(full_dataset, batch_size=64, num_workers=8, collate_fn=collate_fn)    
 
     # Get params for new dataset from old dataset
@@ -78,7 +87,9 @@ if __name__ == '__main__':
     with MDSWriter(out=args.save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
         for batch in tqdm(dataloader):
             for sample in batch:
-                if sample['pile_set_name'] in subsets:
+                if use_block_list and sample['pile_set_name'] not in subsets:
+                    out.write(sample)
+                elif not use_block_list and sample['pile_set_name'] in subsets:
                     out.write(sample)
 
     # savename = os.path.join(args.save_dir, 'data_stats.pkl')
