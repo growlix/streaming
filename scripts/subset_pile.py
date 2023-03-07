@@ -56,6 +56,7 @@ if __name__ == '__main__':
         passed_subsets = args.include_list
     elif args.block_list:
         passed_subsets = args.block_list
+        use_block_list = True
     subsets = []
     for subset in passed_subsets:
         try:    
@@ -84,13 +85,17 @@ if __name__ == '__main__':
     hashes = full_dataset.shards[0].hashes
     size_limit = full_dataset.shards[0].size_limit
 
+    written_samples = 0
     with MDSWriter(out=args.save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
         for batch in tqdm(dataloader):
             for sample in batch:
                 if use_block_list and sample['pile_set_name'] not in subsets:
                     out.write(sample)
+                    written_samples += 1
                 elif not use_block_list and sample['pile_set_name'] in subsets:
                     out.write(sample)
+                    written_samples += 1
+    print(f'Previous dataset size: {len(full_dataset)}. Wrote {written_samples} samples, excluded {len(full_dataset)-written_samples} samples.')
 
     # savename = os.path.join(args.save_dir, 'data_stats.pkl')
     # with open(savename, 'wb') as handle:

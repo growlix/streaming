@@ -28,9 +28,8 @@
                 "train",
                 "--save_dir",
                 "/nfs/subsets/pile/test",
-                "--subsets",
-                "github",
-                "pile-cc",
+                "--block_list",
+                "bookcorpus2",
             ]
         },
         {
