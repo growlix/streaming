@@ -77,7 +77,7 @@ if __name__ == '__main__':
 
     with MDSWriter(out=args.save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
         for batch in tqdm(dataloader):
-            for sample, index in batch:
+            for sample in batch:
                 if sample['pile_set_name'] in subsets:
                     out.write(sample)
 

@@ -27,9 +27,10 @@
                 "--split",
                 "train",
                 "--save_dir",
-                "/nfs/subsets/pile/github",
+                "/nfs/subsets/pile/test",
                 "--subsets",
-                "github"
+                "github",
+                "pile-cc",
             ]
         },
         {
@@ -94,6 +95,31 @@
                 ".2"
             ]
         },        
+        {
+            "name": "write_approx_deduplicate_github",
+            "type": "python",
+            "request": "launch",
+            "program": "scripts/deduplication/approximate/write_and_prune_dataset.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "host": "127.0.0.1",
+            "args": [
+                "--streaming_remote",
+                "s3://mosaicml-internal-checkpoints-shared/matthew/github/",
+                "--streaming_local",
+                "/nfs/streaming_datasets/github/",
+                "--split",
+                "train",
+                "--name",
+                "github",
+                "--save_dir",
+                "/nfs/pruned_datasets/github/keep_0pt2",
+                "--similarity_file",
+                "/nfs/similarities/github_train_max_similarity.pkl",
+                "--keep_fraction",
+                ".2"
+            ]
+        },            
         {
             "name": "Python: Current File",
             "type": "python",
