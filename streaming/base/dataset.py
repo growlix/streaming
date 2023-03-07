@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 from torch.utils.data import IterableDataset
 
 from streaming.base.compression import decompress
+from streaming.base.distributed import barrier
 from streaming.base.format import reader_from_json
 from streaming.base.format.base.reader import FileInfo
 from streaming.base.hashing import get_hash
@@ -96,11 +97,13 @@ class StreamingDataset(IterableDataset):
 
     Checkpoints are represented in JSON as follows:
 
+    .. code-block:: json
+
         {
-            'epoch': int,
-            'sample_in_epoch': int,
-            'shuffle_seed': int,
-            'num_canonical_nodes': int,
+            "epoch":"int",
+            "sample_in_epoch":"int",
+            "shuffle_seed":"int",
+            "num_canonical_nodes":"int"
         }
 
     Args:
@@ -274,6 +277,7 @@ class StreamingDataset(IterableDataset):
                                                   size=len(self.shard_sizes) * np.uint8(0).nbytes)
 
         # Destroy process group, and de-initialize the distributed package
+        barrier()
         if is_dist_pg_initialized:
             dist.destroy_process_group()
 

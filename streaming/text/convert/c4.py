@@ -1,7 +1,7 @@
 # Copyright 2023 MosaicML Streaming authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""C4 (Colossal Cleaned Common Crawl) streaming dataset conversion scripts."""
+"""C4 (Colossal Cleaned Common Crawl) streaming dataset conversion script."""
 
 import os
 from argparse import ArgumentParser, Namespace
@@ -73,10 +73,13 @@ def get(split: str) -> IterableDataset:
     """Collect the samples for this dataset split.
 
     Args:
-        split (str): Split name.
+        split (str): Dataset split name.
+
+    Raises:
+        ValueError: Shards must divide evenly by num_workers
 
     Returns:
-        An IterableDataset.
+        IterableDataset: An IterableDataset.
     """
 
     class ShardedC4(IterableDataset):
