@@ -77,7 +77,7 @@ if __name__ == '__main__':
         split=args.split,
         shuffle=False
         )    
-    dataloader = DataLoader(full_dataset, batch_size=64, num_workers=8, collate_fn=collate_fn)    
+    dataloader = DataLoader(full_dataset, batch_size=64, num_workers=8, collate_fn=collate_fn)
 
     # Get params for new dataset from old dataset
     columns = {k: v for k, v in zip(full_dataset.shards[0].column_names, full_dataset.shards[0].column_encodings)}
