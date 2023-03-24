@@ -6,7 +6,7 @@ from datasets import load_dataset
 
 
 save_dir = "/nfs/streaming_datasets/pile_v2/train"
-dataset = load_dataset("CarperAI/pilev2-dev", split="train")
+dataset = load_dataset("CarperAI/pilev2-dev", split="train", streaming=True)
 
 columns = {'pile_set_name': 'str', 'text': 'str'}
 compression = 'zstd:16'
