@@ -79,13 +79,6 @@ def kmeans_clustering(
     with open(savename, 'wb') as handle:
         pickle.dump(centroid_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
     logger.info(f'Saved clustering data to {savename}')
-        # with open()
-        # inds_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_indices.npy')
-        # with open(inds_filename, 'wb') as f:
-        #     np.save(f, centroid_inds)
-        # paths_filename = os.path.join(save_directory, f'{filename_base}_centroid{centroid_i}_labels.npy')
-        # with open(paths_filename, 'wb') as f:
-        #     np.save(f, centroid_paths)
 
     return nearest_cent
     # # Step 3) sort each class/cluster
