@@ -52,7 +52,6 @@ local = args.streaming_local
 dataset = StreamingDataset(
     local=local,
     remote=remote,
-    split=split,
     shuffle=False,
     batch_size=65536
     )
