@@ -18,69 +18,87 @@ class StreamingCOCO(StreamingDataset):
     """Implementation of the COCO dataset using StreamingDataset.
 
     Args:
-        local (str): Local dataset directory where shards are cached by split.
-        remote (str, optional): Download shards from this remote path or directory. If None, this
-            rank and worker's partition of the dataset must all exist locally. Defaults to
-            ``None``.
-        split (str, optional): Which dataset split to use, if any. Defaults to ``None``.
-        shuffle (bool): Whether to iterate over the samples in randomized order. Defaults to
-            ``False``.
-        transform (callable, optional): A function/transform that takes in an image and bboxes and
-            returns a transformed version. Defaults to ``None``.
-        predownload (int, optional): Target number of samples ahead to download the shards of while
-            iterating. Defaults to ``100_000``.
-        keep_zip (bool, optional): Whether to keep or delete the compressed file when
-            decompressing downloaded shards. If set to None, keep iff remote is local. Defaults to
-            ``None``.
+        remote (str, optional): Remote path or directory to download the dataset from. If ``None``,
+            its data must exist locally. StreamingDataset uses either ``streams`` or
+            ``remote``/``local``. Defaults to ``None``.
+        local (str, optional): Local working directory to download shards to. This is where shards
+            are cached while they are being used. Uses a temp directory if not set.
+            StreamingDataset uses either ``streams`` or ``remote``/``local``. Defaults to ``None``.
+        split (str, optional): Which dataset split to use, if any. If provided, we stream from/to
+            the ``split`` subdirs of  ``remote`` and ``local``. Defaults to ``None``.
         download_retry (int): Number of download re-attempts before giving up. Defaults to ``2``.
         download_timeout (float): Number of seconds to wait for a shard to download before raising
             an exception. Defaults to ``60``.
         validate_hash (str, optional): Optional hash or checksum algorithm to use to validate
             shards. Defaults to ``None``.
-        shuffle_seed (int): Seed for Deterministic data shuffling. Defaults to ``9176``.
+        keep_zip (bool): Whether to keep or delete the compressed form when decompressing
+            downloaded shards. If ``False``, keep iff remote is local or no remote. Defaults to
+            ``False``.
+        choose (int, optional): Number of samples to draw per epoch balanced across all streams.
+            If ``None``, takes its value from the total number of underlying samples. Provide this
+            field if you are weighting streams relatively to target a larger or smaller epoch size.
+            Defaults to ``None``.
+        predownload (int, optional): Target number of samples ahead to download the shards per
+            number of workers provided in a dataloader while iterating. Defaults to ``512``.
+        cache_limit (int, optional): Maximum size in bytes of this StreamingDataset's shard cache.
+            Before downloading a shard, the least recently used resident shard(s) may be evicted
+            (deleted from the local cache) in order to stay under the limit. Set to ``None`` to
+            disable shard eviction. Defaults to ``None``.
+        partition_algo (str): Which partitioning algorithm to use. Defaults to ``orig``.
         num_canonical_nodes (int, optional): Canonical number of nodes for shuffling with
             resumption. Defaults to ``None``, which is interpreted as the number of nodes of the
             initial run.
         batch_size (int, optional): Batch size of its DataLoader, which affects how the dataset is
             partitioned over the workers. Defaults to ``None``.
-        partition_algo (str): Which partitioning algorithm to use. Defaults to ``orig``.
-        shuffle_algo (str): Which shuffling algorithm to use. Defaults to ``py2s``.
+        shuffle (bool): Whether to iterate over the samples in randomized order. Defaults to
+            ``False``.
+        shuffle_algo (str): Which shuffling algorithm to use. Defaults to ``py1s``.
+        shuffle_seed (int): Seed for Deterministic data shuffling. Defaults to ``9176``.
+        shuffle_block_size (int): Unit of shuffle. Defaults to ``1 << 18``.
+        transform (callable, optional): A function/transform that takes in an image and bboxes and
+            returns a transformed version. Defaults to ``None``.
     """
 
     def __init__(self,
                  *,
-                 local: str,
                  remote: Optional[str] = None,
+                 local: Optional[str] = None,
                  split: Optional[str] = None,
-                 shuffle: bool = False,
-                 transform: Optional[Callable] = None,
-                 predownload: Optional[int] = 100_000,
-                 keep_zip: Optional[bool] = None,
                  download_retry: int = 2,
                  download_timeout: float = 60,
                  validate_hash: Optional[str] = None,
-                 shuffle_seed: int = 9176,
+                 keep_zip: bool = False,
+                 choose: Optional[int] = None,
+                 predownload: Optional[int] = 512,
+                 partition_algo: str = 'orig',
+                 cache_limit: Optional[int] = None,
                  num_canonical_nodes: Optional[int] = None,
                  batch_size: Optional[int] = None,
-                 partition_algo: str = 'orig',
-                 shuffle_algo: str = 'py2s') -> None:
-        super().__init__(local=local,
-                         remote=remote,
+                 shuffle: bool = False,
+                 shuffle_algo: str = 'py1s',
+                 shuffle_seed: int = 9176,
+                 shuffle_block_size: int = 1 << 18,
+                 transform: Optional[Callable] = None) -> None:
+        super().__init__(remote=remote,
+                         local=local,
                          split=split,
-                         shuffle=shuffle,
-                         predownload=predownload,
-                         keep_zip=keep_zip,
                          download_retry=download_retry,
                          download_timeout=download_timeout,
                          validate_hash=validate_hash,
-                         shuffle_seed=shuffle_seed,
+                         keep_zip=keep_zip,
+                         choose=choose,
+                         predownload=predownload,
+                         cache_limit=cache_limit,
+                         partition_algo=partition_algo,
                          num_canonical_nodes=num_canonical_nodes,
                          batch_size=batch_size,
-                         partition_algo=partition_algo,
-                         shuffle_algo=shuffle_algo)
+                         shuffle=shuffle,
+                         shuffle_algo=shuffle_algo,
+                         shuffle_seed=shuffle_seed,
+                         shuffle_block_size=shuffle_block_size)
         self.transform = transform
 
-    def __getitem__(self, idx: int) -> Any:
+    def get_item(self, idx: int) -> Any:
         """Get sample by global index, blocking to load its shard if missing.
 
         Args:
@@ -89,7 +107,7 @@ class StreamingCOCO(StreamingDataset):
         Returns:
             Any: Sample data.
         """
-        x = super().__getitem__(idx)
+        x = super().get_item(idx)
         img = x['img'].convert('RGB')
         img_id = x['img_id']
         htot = x['htot']

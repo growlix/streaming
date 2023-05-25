@@ -37,7 +37,7 @@
     <a href="https://streaming.docs.mosaicml.com">
         <img alt="Documentation" src="https://readthedocs.org/projects/streaming/badge/?version=stable">
     </a>
-    <a href="https://join.slack.com/t/mosaicml-community/shared_invite/zt-w0tiddn9-WGTlRpfjcO9J5jyrMub1dg">
+    <a href="https://mosaicml.me/slack">
         <img alt="Chat @ Slack" src="https://img.shields.io/badge/slack-chat-2eb67d.svg?logo=slack">
     </a>
     <a href="https://github.com/mosaicml/streaming/blob/main/LICENSE">
@@ -188,6 +188,24 @@ dataset = StreamingInsideWebVid(local=local, remote=remote, shuffle=True)
 
 ---
 
+## Seamless data mixing
+
+Easily experiment with dataset mixtures with [`Stream`](https://docs.mosaicml.com/projects/streaming/en/latest/api_reference/generated/streaming.Stream.html#stream). Dataset sampling can be controlled in relative (proportion) or absolute (repeat or samples terms). During streaming, the different datasets are streamed, shuffled, and mixed seamlessly just-in-time.
+
+```
+# mix C4, github code, and internal datasets
+streams = [
+  Stream(remote='s3://datasets/c4', proportion=0.4),
+  Stream(remote='s3://datasets/github', proportion=0.1),
+  Stream(remote='gcs://datasets/my_internal', proportion=0.5),
+]
+
+dataset = StreamingDataset(
+  streams=streams,
+  samples_per_epoch=1e8,
+)
+```
+
 ## True Determinism
 
 A unique feature of our solution: samples are in the same order regardless of the number of GPUs, nodes, or CPU workers. This makes it easier to:
@@ -199,7 +217,7 @@ See the figure below — training a model on 1, 8, 16, 32, or 64 GPUs yields the
 
 ![Plot of elastic determinism](docs/source/_static/images/determinism.png)
 
-## Instant Mid-Epoch Resumption
+## Instant mid-epoch resumption
 
 It can be expensive — and annoying — to wait for your job to resume while your dataloader spins after a hardware failure or loss spike. Thanks to our deterministic sample ordering, StreamingDataset lets you resume training in seconds, not hours, in the middle of a long training run.
 
@@ -217,7 +235,7 @@ Our MDS format cuts extraneous work to the bone, resulting in ultra-low sample l
 
 *Results shown are from ImageNet + ResNet-50 training, collected over 5 repetitions after the data is cached after the first epoch.*
 
-## Equal Convergence
+## Equal convergence
 
 Model convergence from using StreamingDataset is just as good as using local disk, thanks to our shuffling algorithm.
 
@@ -245,7 +263,7 @@ dataset = StreamingDataset(...)
 sample = dataset[19543]
 ```
 
-## **No divisibility requirements**
+## No divisibility requirements
 
 StreamingDataset will happily iterate over any number of samples. You do not have to forever delete samples so that the dataset is divisible over a baked-in number of devices. Instead, each epoch a different selection of samples are repeated (none dropped) so that each device processes the same count.
 
@@ -255,9 +273,20 @@ dataset = StreamingDataset(...)
 dl = DataLoader(dataset, num_workers=...)
 ```
 
+## Disk usage limits
+
+Dynamically delete least recently used shards in order to keep disk usage under a specified limit. This is enabled by setting the StreamingDataset argument `cache_limit`. See the [shuffling](./docs/source/fundamentals/shuffling.md) guide for more details.
+
+```
+dataset = StreamingDataset(
+    cache_limit='100gb',
+    ...
+)
+```
+
 # 🏆 Project Showcase
 
-Here are some projects and experiments that used StreamingDataset. Got something to add?  Email [community@mosaicml.com](mailto:community@mosaicml.com) or join our [Community Slack](https://join.slack.com/t/mosaicml-community/shared_invite/zt-1btms90mc-GipE2ufuPkKY0QBrmF3LSA).
+Here are some projects and experiments that used StreamingDataset. Got something to add?  Email [community@mosaicml.com](mailto:community@mosaicml.com) or join our [Community Slack](https://mosaicml.me/slack).
 
 - [BioMedLM](https://www.mosaicml.com/blog/introducing-pubmed-gpt): a Domain Specific Large Language Model for BioMedicine by MosaicML and Stanford CRFM
 - [Mosaic Diffusion Models](https://www.mosaicml.com/blog/training-stable-diffusion-from-scratch-costs-160k): Training Stable Diffusion from Scratch Costs <$160k

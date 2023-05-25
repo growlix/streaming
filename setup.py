@@ -47,7 +47,7 @@ install_requires = [
     'matplotlib>=3.5.2,<4',
     'paramiko>=2.11.0,<4',
     'python-snappy>=0.6.1,<1',
-    'torch>=1.10,<2',
+    'torch>=1.10,<3',
     'torchtext>=0.10',
     'torchvision>=0.10',
     'tqdm>=4.64.0,<5',
@@ -55,6 +55,7 @@ install_requires = [
     'xxhash>=3.0.0,<4',
     'zstd>=1.5.2.5,<2',
     'oci>=2.88,<3',
+    'azure-storage-blob>=12.0.0,<13',
 ]
 
 extra_deps = {}
@@ -64,15 +65,15 @@ extra_deps['dev'] = [
     'docformatter>=1.4',
     'jupyter==1.0.0',
     'pre-commit>=2.18.1,<4',
-    'pytest==7.2.2',
+    'pytest==7.3.1',
     'pytest_codeblocks==0.16.1',
     'pytest-cov>=4,<5',
     'toml==0.10.2',
-    'yamllint==1.29.0',
+    'yamllint==1.31.0',
     'moto>=4.0,<5',
-    'fastapi==0.92.0',
-    'pydantic==1.10.5',
-    'uvicorn==0.20.0',
+    'fastapi==0.95.2',
+    'pydantic==1.10.7',
+    'uvicorn==0.22.0',
 ]
 
 extra_deps['docs'] = [
@@ -84,13 +85,13 @@ extra_deps['docs'] = [
     'pandoc==2.3',
     'pypandoc==1.11',
     'sphinx-argparse==0.4.0',
-    'sphinx-copybutton==0.5.1',
+    'sphinx-copybutton==0.5.2',
     'sphinx==4.4.0',
     'sphinx_panels==0.6.0',
     'sphinxcontrib-images==0.9.4',
     'sphinxcontrib.katex==0.9.4',
     'sphinxemoji==0.2.0',
-    'sphinxext.opengraph==0.8.1',
+    'sphinxext.opengraph==0.8.2',
     'sphinx-tabs>=3,<4',
 ]
 
@@ -111,6 +112,10 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/mosaicml/streaming/',
+    include_package_data=True,
+    package_data={
+        'streaming': ['py.typed'],
+    },
     packages=setuptools.find_packages(exclude=['tests*']),
     classifiers=classifiers,
     install_requires=install_requires,

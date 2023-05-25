@@ -7,11 +7,11 @@ import os
 import shutil
 import urllib.parse
 from time import sleep, time
-from typing import Optional
+from typing import Any, Dict, Optional
 
 __all__ = ['download_or_wait']
 
-S3_NOT_FOUND_CODES = {'403', '404', 'NoSuchKey'}
+BOTOCORE_CLIENT_ERROR_CODES = {'403', '404', 'NoSuchKey'}
 
 
 def download_from_s3(remote: str, local: str, timeout: float) -> None:
@@ -23,11 +23,13 @@ def download_from_s3(remote: str, local: str, timeout: float) -> None:
         timeout (float): How long to wait for shard to download before raising an exception.
     """
 
-    def _download_file(unsigned: bool = False) -> None:
+    def _download_file(unsigned: bool = False,
+                       extra_args: Optional[Dict[str, Any]] = None) -> None:
         """Download the file from AWS S3 bucket. The bucket can be either public or private.
 
         Args:
-            unsigned (bool, optional): Set to True if it is a public bucket. Defaults to False.
+            unsigned (bool, optional):  Set to True if it is a public bucket. Defaults to False.
+            extra_args (Dict[str, Any], optional): Extra arguments supported by boto3. Defaults to None.
         """
         if unsigned:
             # Client will be using unsigned mode in which public
@@ -35,10 +37,25 @@ def download_from_s3(remote: str, local: str, timeout: float) -> None:
             config = Config(read_timeout=timeout, signature_version=UNSIGNED)
         else:
             config = Config(read_timeout=timeout)
-        s3 = boto3.client('s3', config=config)
-        s3.download_file(obj.netloc, obj.path.lstrip('/'), local)
+
+        if extra_args is None:
+            extra_args = {}
+
+        # Create a new session per thread
+        session = boto3.session.Session()
+        # Create a resource client using a thread's session object
+        s3 = session.client('s3', config=config)
+        # Threads calling S3 operations return RuntimeError (cannot schedule new futures after
+        # interpreter shutdown). Temporary solution is to have `use_threads` as `False`.
+        # Issue: https://github.com/boto/boto3/issues/3113
+        s3.download_file(obj.netloc,
+                         obj.path.lstrip('/'),
+                         local,
+                         ExtraArgs=extra_args,
+                         Config=TransferConfig(use_threads=False))
 
     import boto3
+    from boto3.s3.transfer import TransferConfig
     from botocore import UNSIGNED
     from botocore.config import Config
     from botocore.exceptions import ClientError, NoCredentialsError
@@ -47,17 +64,31 @@ def download_from_s3(remote: str, local: str, timeout: float) -> None:
     if obj.scheme != 's3':
         raise ValueError(f'Expected obj.scheme to be "s3", got {obj.scheme} for remote={remote}')
 
+    extra_args = {}
+    # When enabled, the requester instead of the bucket owner pays the cost of the request
+    # and the data download from the bucket.
+    if os.environ.get('MOSAICML_STREAMING_AWS_REQUESTER_PAYS') is not None:
+        requester_pays_buckets = os.environ.get(  # yapf: ignore
+            'MOSAICML_STREAMING_AWS_REQUESTER_PAYS').split(',')  # pyright: ignore
+        requester_pays_buckets = [name.strip() for name in requester_pays_buckets]
+        if obj.netloc in requester_pays_buckets:
+            extra_args['RequestPayer'] = 'requester'
+
     try:
-        _download_file()
+        _download_file(extra_args=extra_args)
     except NoCredentialsError:
         # Public S3 buckets without credentials
-        _download_file(unsigned=True)
+        _download_file(unsigned=True, extra_args=extra_args)
     except ClientError as e:
-        if e.response['Error']['Code'] in S3_NOT_FOUND_CODES:
-            raise FileNotFoundError(f'Object {remote} not found.') from e
+        if e.response['Error']['Code'] in BOTOCORE_CLIENT_ERROR_CODES:
+            e.args = (f'Object {remote} not found! Either check the bucket path or the bucket ' +
+                      f'permission. If the bucket is a requester pays bucket, then provide the ' +
+                      f'bucket name to the environment variable ' +
+                      f'`MOSAICML_STREAMING_AWS_REQUESTER_PAYS`.',)
+            raise e
         elif e.response['Error']['Code'] == '400':
             # Public S3 buckets without credentials
-            _download_file(unsigned=True)
+            _download_file(unsigned=True, extra_args=extra_args)
     except Exception:
         raise
 
@@ -121,25 +152,35 @@ def download_from_gcs(remote: str, local: str) -> None:
     """Download a file from remote GCS to local.
 
     Args:
-        remote (str): Remote path (S3).
+        remote (str): Remote path (GCS).
         local (str): Local path (local filesystem).
     """
     import boto3
+    from boto3.s3.transfer import TransferConfig
     from botocore.exceptions import ClientError
 
     obj = urllib.parse.urlparse(remote)
     if obj.scheme != 'gs':
         raise ValueError(f'Expected obj.scheme to be "gs", got {obj.scheme} for remote={remote}')
 
-    gcs_client = boto3.client('s3',
-                              region_name='auto',
-                              endpoint_url='https://storage.googleapis.com',
-                              aws_access_key_id=os.environ['GCS_KEY'],
-                              aws_secret_access_key=os.environ['GCS_SECRET'])
+    # Create a new session per thread
+    session = boto3.session.Session()
+    # Create a resource client using a thread's session object
+    gcs_client = session.client('s3',
+                                region_name='auto',
+                                endpoint_url='https://storage.googleapis.com',
+                                aws_access_key_id=os.environ['GCS_KEY'],
+                                aws_secret_access_key=os.environ['GCS_SECRET'])
     try:
-        gcs_client.download_file(obj.netloc, obj.path.lstrip('/'), local)
+        # Threads calling S3 operations return RuntimeError (cannot schedule new futures after
+        # interpreter shutdown). Temporary solution is to have `use_threads` as `False`.
+        # Issue: https://github.com/boto/boto3/issues/3113
+        gcs_client.download_file(obj.netloc,
+                                 obj.path.lstrip('/'),
+                                 local,
+                                 Config=TransferConfig(use_threads=False))
     except ClientError as e:
-        if e.response['Error']['Code'] in S3_NOT_FOUND_CODES:
+        if e.response['Error']['Code'] in BOTOCORE_CLIENT_ERROR_CODES:
             raise FileNotFoundError(f'Object {remote} not found.') from e
     except Exception:
         raise
@@ -172,6 +213,72 @@ def download_from_oci(remote: str, local: str) -> None:
     os.rename(local_tmp, local)
 
 
+def download_from_r2(remote: str, local: str) -> None:
+    """Download a file from remote Cloudflare R2 to local.
+
+    Args:
+        remote (str): Remote path (R2).
+        local (str): Local path (local filesystem).
+    """
+    import boto3
+    from boto3.s3.transfer import TransferConfig
+    from botocore.exceptions import ClientError
+
+    obj = urllib.parse.urlparse(remote)
+    if obj.scheme != 'r2':
+        raise ValueError(f'Expected obj.scheme to be "r2", got {obj.scheme} for remote={remote}')
+
+    # Create a new session per thread
+    session = boto3.session.Session()
+    # Create a resource client using a thread's session object
+    r2_client = session.client('s3',
+                               region_name='auto',
+                               endpoint_url=os.environ['S3_ENDPOINT_URL'])
+    try:
+        # Threads calling S3 operations return RuntimeError (cannot schedule new futures after
+        # interpreter shutdown). Temporary solution is to have `use_threads` as `False`.
+        # Issue: https://github.com/boto/boto3/issues/3113
+        r2_client.download_file(obj.netloc,
+                                obj.path.lstrip('/'),
+                                local,
+                                Config=TransferConfig(use_threads=False))
+    except ClientError as e:
+        if e.response['Error']['Code'] in BOTOCORE_CLIENT_ERROR_CODES:
+            raise FileNotFoundError(f'Object {remote} not found.') from e
+    except Exception:
+        raise
+
+
+def download_from_azure(remote: str, local: str) -> None:
+    """Download a file from remote Microsoft Azure to local.
+
+    Args:
+        remote (str): Remote path (azure).
+        local (str): Local path (local filesystem).
+    """
+    from azure.core.exceptions import ResourceNotFoundError
+    from azure.storage.blob import BlobServiceClient
+
+    obj = urllib.parse.urlparse(remote)
+    if obj.scheme != 'azure':
+        raise ValueError(
+            f'Expected obj.scheme to be "azure", got {obj.scheme} for remote={remote}')
+
+    # Create a new session per thread
+    service = BlobServiceClient(
+        account_url=f"https://{os.environ['AZURE_ACCOUNT_NAME']}.blob.core.windows.net",
+        credential=os.environ['AZURE_ACCOUNT_ACCESS_KEY'])
+    try:
+        blob_client = service.get_blob_client(container=obj.netloc, blob=obj.path.lstrip('/'))
+        with open(local, 'wb') as my_blob:
+            blob_data = blob_client.download_blob()
+            blob_data.readinto(my_blob)
+    except ResourceNotFoundError:
+        raise FileNotFoundError(f'Object {remote} not found.')
+    except Exception:
+        raise
+
+
 def download_from_local(remote: str, local: str) -> None:
     """Download a file from remote to local.
 
@@ -197,6 +304,11 @@ def download_file(remote: Optional[str], local: str, timeout: float):
     if os.path.exists(local):
         return
 
+    # fix paths for windows
+    local = local.replace('\\', '/')
+    if remote:
+        remote = remote.replace('\\', '/')
+
     local_dir = os.path.dirname(local)
     os.makedirs(local_dir, exist_ok=True)
 
@@ -211,6 +323,10 @@ def download_file(remote: Optional[str], local: str, timeout: float):
         download_from_gcs(remote, local)
     elif remote.startswith('oci://'):
         download_from_oci(remote, local)
+    elif remote.startswith('r2://'):
+        download_from_r2(remote, local)
+    elif remote.startswith('azure://'):
+        download_from_azure(remote, local)
     else:
         download_from_local(remote, local)
 
