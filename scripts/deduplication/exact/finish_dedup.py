@@ -174,7 +174,6 @@ for i,byte_start in enumerate(sizes[:-1]):
 old_dataset = StreamingDataset(
     local=local,
     remote=remote,
-    split=split,
     shuffle=False,
     batch_size=65536
     )
@@ -185,8 +184,8 @@ compression = old_dataset.shards[0].compression
 hashes = old_dataset.shards[0].hashes
 size_limit = old_dataset.shards[0].size_limit
 
-# Write deduplicated samples
-with MDSWriter( dirname=save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
+# Write deduplicated samples to new dataset
+with MDSWriter(out=save_dir, columns=columns, compression=compression, hashes=hashes, size_limit=size_limit) as out:
     for i, sample in tqdm(enumerate(old_dataset)):
         if i in remove_ex.keys():
             text = sample['text']
