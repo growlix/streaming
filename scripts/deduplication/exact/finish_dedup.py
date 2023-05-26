@@ -130,7 +130,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Dedup dataset')
 parser.add_argument('--streaming_remote', type=str, default="None")
 parser.add_argument('--streaming_local', type=str, default="/tmp/streaming_dataset")
-parser.add_argument('--data_dir', type=str)
+# parser.add_argument('--data_dir', type=str)
 parser.add_argument('--save_dir', type=str)
 parser.add_argument('--suffixarray_dir', type=str)
 parser.add_argument('--name', type=str)
